@@ -1,0 +1,6 @@
+{
+  "name": "Gboard Dictionary Importer",
+  "description": "Searches for Gboard user dictionary zip files in Google Drive and imports them into a Google Spreadsheet.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

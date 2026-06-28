@@ -1,0 +1,20 @@
+{
+  "collections": [
+    {
+      "collectionId": "users",
+      "description": "Stores user preferences and linked spreadsheet ID",
+      "fields": [
+        {
+          "dataType": "string",
+          "description": "The Google Spreadsheet ID used for imports",
+          "fieldName": "spreadsheetId"
+        },
+        {
+          "dataType": "timestamp",
+          "description": "When the spreadsheet was linked",
+          "fieldName": "updatedAt"
+        }
+      ]
+    }
+  ]
+}

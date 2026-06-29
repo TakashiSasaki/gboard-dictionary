@@ -8,7 +8,7 @@ import JSZip from 'jszip';
 import { saveAs } from 'file-saver';
 import { initAuth, googleSignIn, logout, getUserSpreadsheetId, setUserSpreadsheetId } from './firebase';
 import { User as FirebaseUser } from 'firebase/auth';
-import { Loader2, Database, ExternalLink, LogOut, Search, XCircle, FileSpreadsheet, RefreshCcw, ChevronDown, User as UserIcon, Mail, Download, BookOpen, Info } from 'lucide-react';
+import { Loader2, Database, ExternalLink, LogOut, Search, XCircle, FileSpreadsheet, RefreshCcw, ChevronDown, User as UserIcon, Mail, Download, BookOpen, Info, ArrowUpDown, ArrowUp, ArrowDown } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { BrowserRouter, Routes, Route, Link, useLocation, useNavigate } from 'react-router-dom';
 
@@ -113,9 +113,8 @@ function AppContent() {
   const [error, setError] = useState<React.ReactNode>(null);
   const [debugInfo, setDebugInfo] = useState<string | null>(null);
 
-  const [languageFilter, setLanguageFilter] = useState<string>('ALL');
-  const [posFilter, setPosFilter] = useState<string>('ALL');
-  const [noReadingFilter, setNoReadingFilter] = useState<boolean>(false);
+  const [sortColumn, setSortColumn] = useState<'reading' | 'word' | null>(null);
+  const [sortDirection, setSortDirection] = useState<'asc' | 'desc'>('asc');
 
   const location = useLocation();
   const navigate = useNavigate();
@@ -123,31 +122,32 @@ function AppContent() {
   // Determine active tab from URL path
   const activeTab = location.pathname === '/merged' ? 'merged' : 'import';
 
-  const availableLanguages = useMemo(() => {
-    const langs = new Set<string>();
-    mergedRecords.forEach(row => langs.add(row[2]?.trim() || ''));
-    return Array.from(langs).sort();
-  }, [mergedRecords]);
-
-  const availablePartsOfSpeech = useMemo(() => {
-    const pos = new Set<string>();
-    mergedRecords.forEach(row => pos.add(row[3]?.trim() || ''));
-    return Array.from(pos).sort();
-  }, [mergedRecords]);
+  const handleSort = (column: 'reading' | 'word') => {
+    if (sortColumn === column) {
+      setSortDirection(sortDirection === 'asc' ? 'desc' : 'asc');
+    } else {
+      setSortColumn(column);
+      setSortDirection('asc');
+    }
+  };
 
   const filteredRecords = useMemo(() => {
-    return mergedRecords.filter(row => {
-      if (noReadingFilter && row[0]?.trim()) return false;
-      
-      const rowLang = row[2]?.trim() || '';
-      if (languageFilter !== 'ALL' && rowLang !== languageFilter) return false;
-      
-      const rowPos = row[3]?.trim() || '';
-      if (posFilter !== 'ALL' && rowPos !== posFilter) return false;
-      
-      return true;
-    });
-  }, [mergedRecords, languageFilter, posFilter, noReadingFilter]);
+    let result = [...mergedRecords];
+
+    if (sortColumn) {
+      result = result.sort((a, b) => {
+        const colIndex = sortColumn === 'reading' ? 0 : 1;
+        const valA = (a[colIndex] || '').toLowerCase();
+        const valB = (b[colIndex] || '').toLowerCase();
+        
+        if (valA < valB) return sortDirection === 'asc' ? -1 : 1;
+        if (valA > valB) return sortDirection === 'asc' ? 1 : -1;
+        return 0;
+      });
+    }
+
+    return result;
+  }, [mergedRecords, sortColumn, sortDirection]);
 
   useEffect(() => {
     const unsubscribe = initAuth(async (u, t) => {
@@ -806,51 +806,37 @@ function AppContent() {
                     </div>
                   ) : mergedRecords.length > 0 ? (
                     <>
-                      <div className="flex flex-wrap gap-4 px-7 mb-4 mt-4 items-center">
-                        <label className="flex items-center gap-2 text-sm text-slate-700 cursor-pointer">
-                          <input 
-                            type="checkbox" 
-                            checked={noReadingFilter} 
-                            onChange={(e) => setNoReadingFilter(e.target.checked)} 
-                            className="rounded border-slate-300 text-slate-900 focus:ring-slate-900" 
-                          />
-                          No reading (読み無し)
-                        </label>
-                        <label className="flex items-center gap-2 text-sm text-slate-700">
-                          <span className="font-medium text-slate-500">Language:</span>
-                          <select 
-                            value={languageFilter} 
-                            onChange={(e) => setLanguageFilter(e.target.value)} 
-                            className="bg-slate-50 border border-slate-200 rounded-lg px-3 py-1.5 text-sm focus:ring-slate-900 focus:border-slate-900"
-                          >
-                            <option value="ALL">All</option>
-                            {availableLanguages.map(lang => (
-                              <option key={lang} value={lang}>{lang === '' ? '(Unspecified)' : lang}</option>
-                            ))}
-                          </select>
-                        </label>
-                        <label className="flex items-center gap-2 text-sm text-slate-700">
-                          <span className="font-medium text-slate-500">Part of Speech:</span>
-                          <select 
-                            value={posFilter} 
-                            onChange={(e) => setPosFilter(e.target.value)} 
-                            className="bg-slate-50 border border-slate-200 rounded-lg px-3 py-1.5 text-sm focus:ring-slate-900 focus:border-slate-900"
-                          >
-                            <option value="ALL">All</option>
-                            {availablePartsOfSpeech.map(pos => (
-                              <option key={pos} value={pos}>{pos === '' ? '(Unspecified)' : pos}</option>
-                            ))}
-                          </select>
-                        </label>
-                      </div>
-
-                      <div className="border border-slate-100 rounded-xl overflow-hidden mx-4 sm:mx-7 mb-2">
+                      <div className="border border-slate-100 rounded-xl overflow-hidden mx-4 sm:mx-7 mb-2 mt-4">
                         <div className="overflow-x-auto max-h-[60vh]">
                           <table className="w-full text-sm text-left">
                             <thead className="bg-slate-50 text-slate-500 font-medium border-b border-slate-100 sticky top-0">
                               <tr>
-                                <th className="px-4 py-[1px] whitespace-nowrap">Reading (よみ)</th>
-                                <th className="px-4 py-[1px] whitespace-nowrap">Word (単語)</th>
+                                <th 
+                                  className="px-4 py-[1px] whitespace-nowrap cursor-pointer hover:bg-slate-100 transition-colors select-none"
+                                  onClick={() => handleSort('reading')}
+                                >
+                                  <div className="flex items-center gap-1">
+                                    Reading (よみ)
+                                    {sortColumn === 'reading' ? (
+                                      sortDirection === 'asc' ? <ArrowUp className="w-3 h-3 text-slate-700" /> : <ArrowDown className="w-3 h-3 text-slate-700" />
+                                    ) : (
+                                      <ArrowUpDown className="w-3 h-3 text-slate-300" />
+                                    )}
+                                  </div>
+                                </th>
+                                <th 
+                                  className="px-4 py-[1px] whitespace-nowrap cursor-pointer hover:bg-slate-100 transition-colors select-none"
+                                  onClick={() => handleSort('word')}
+                                >
+                                  <div className="flex items-center gap-1">
+                                    Word (単語)
+                                    {sortColumn === 'word' ? (
+                                      sortDirection === 'asc' ? <ArrowUp className="w-3 h-3 text-slate-700" /> : <ArrowDown className="w-3 h-3 text-slate-700" />
+                                    ) : (
+                                      <ArrowUpDown className="w-3 h-3 text-slate-300" />
+                                    )}
+                                  </div>
+                                </th>
                                 <th className="px-4 py-[1px] whitespace-nowrap">Language</th>
                                 <th className="px-4 py-[1px] whitespace-nowrap">Part of Speech</th>
                               </tr>

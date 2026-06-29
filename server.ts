@@ -215,24 +215,33 @@ async function startServer() {
           } catch (e) {}
 
           // Determine which one is better. 
-          // If TSV parsing results in at least 3 columns, we trust it as a Gboard dictionary.
+          // If TSV parsing results in at least 2 columns (Reading and Word), we favor it.
           const getColCount = (recs: string[][]) => recs.length > 0 ? Math.max(...recs.map(r => r.length), 0) : 0;
           const tsvCols = getColCount(tsvRecords);
           const csvCols = getColCount(csvRecords);
 
-          // Favor TSV if it looks valid (>= 3 columns), otherwise fallback to the one with more columns
-          let records = (tsvCols >= 3) ? tsvRecords : (csvCols > tsvCols ? csvRecords : tsvRecords);
+          // Favor TSV if it looks valid (>= 2 columns), otherwise fallback to the one with more columns
+          let records = (tsvCols >= 2) ? tsvRecords : (csvCols > tsvCols ? csvRecords : tsvRecords);
           
           // Filter out comment lines (usually start with #)
           records = records.filter(row => row.length > 0 && !row[0].startsWith('#'));
 
-          // Validate column count (must have at least 3 columns)
+          // Validate column count
           const finalMaxCols = getColCount(records);
-          if (finalMaxCols < 3) {
+          if (finalMaxCols < 2) {
             importResults.push({ 
               fileId: file.id, 
               status: "error", 
-              message: `Invalid format: Expected at least 3 columns, found ${finalMaxCols}.` 
+              message: `Invalid format: Expected at least 2 columns (Reading and Word), found ${finalMaxCols}.` 
+            });
+            continue;
+          }
+
+          if (finalMaxCols > 4) {
+            importResults.push({ 
+              fileId: file.id, 
+              status: "error", 
+              message: `Invalid format: Unexpected columns found (maximum 4 allowed, found ${finalMaxCols}).` 
             });
             continue;
           }
@@ -255,7 +264,7 @@ async function startServer() {
             }
           }
 
-          importResults.push({ ...fileMetadata, status: "imported", rows: records.length });
+          importResults.push({ ...fileMetadata, zipInnerFileName: csvEntry.entryName, status: "imported", rows: records.length });
         } catch (fileErr: any) {
           console.error(`Error processing file ${file.id}:`, fileErr.message);
           importResults.push({ ...fileMetadata, status: "error", message: fileErr.message });
@@ -272,6 +281,26 @@ async function startServer() {
     } catch (error: any) {
       console.error("Import error:", error);
       res.status(500).json({ error: error.message });
+    }
+  });
+
+  app.post("/api/debug-zip", express.json(), async (req, res) => {
+    try {
+      const { fileId, token } = req.body;
+      const driveRes = await fetch(`https://www.googleapis.com/drive/v3/files/${fileId}?alt=media`, {
+        headers: { 'Authorization': `Bearer ${token}` }
+      });
+      if (!driveRes.ok) throw new Error("Drive fetch failed");
+      const AdmZip = (await import('adm-zip')).default;
+      const arrayBuffer = await driveRes.arrayBuffer();
+      const zip = new AdmZip(Buffer.from(arrayBuffer));
+      const csvEntry = zip.getEntries().find(e => e.entryName.toLowerCase().endsWith(".txt"));
+      if (!csvEntry) return res.json({ error: "No text file" });
+      const content = csvEntry.getData().toString("utf8");
+      const hex = Array.from(content.substring(0, 100)).map(c => c.charCodeAt(0).toString(16)).join(' ');
+      res.json({ lines: content.split('\n').slice(0, 10), hex });
+    } catch(e: any) {
+      res.status(500).json({ error: e.message });
     }
   });
 

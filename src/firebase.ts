@@ -145,28 +145,42 @@ async function testConnection() {
 }
 testConnection();
 
+const SPREADSHEET_ID_KEY_PREFIX = 'gboard_importer_sheet_';
+
 export const getUserSpreadsheetId = async (uid: string): Promise<string | null> => {
   const path = `users/${uid}`;
   try {
     const userDoc = await getDoc(doc(db, 'users', uid));
     if (userDoc.exists()) {
-      return userDoc.data().spreadsheetId || null;
+      const sid = userDoc.data().spreadsheetId || null;
+      if (sid) {
+        localStorage.setItem(SPREADSHEET_ID_KEY_PREFIX + uid, sid);
+      }
+      return sid;
     }
-    return null;
-  } catch (error) {
+  } catch (error: any) {
+    if (error.message?.includes('Quota limit exceeded')) {
+      console.warn('Firestore quota exceeded, falling back to local storage');
+      return localStorage.getItem(SPREADSHEET_ID_KEY_PREFIX + uid);
+    }
     handleFirestoreError(error, OperationType.GET, path);
-    return null;
   }
+  return localStorage.getItem(SPREADSHEET_ID_KEY_PREFIX + uid);
 };
 
 export const setUserSpreadsheetId = async (uid: string, spreadsheetId: string) => {
   const path = `users/${uid}`;
+  localStorage.setItem(SPREADSHEET_ID_KEY_PREFIX + uid, spreadsheetId);
   try {
     await setDoc(doc(db, 'users', uid), {
       spreadsheetId,
       updatedAt: serverTimestamp(),
     }, { merge: true });
-  } catch (error) {
+  } catch (error: any) {
+    if (error.message?.includes('Quota limit exceeded')) {
+      console.warn('Firestore quota exceeded, saved only to local storage');
+      return;
+    }
     handleFirestoreError(error, OperationType.WRITE, path);
   }
 };

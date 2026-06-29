@@ -3,14 +3,16 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
+import JSZip from 'jszip';
+import { saveAs } from 'file-saver';
 import { initAuth, googleSignIn, logout, getUserSpreadsheetId, setUserSpreadsheetId } from './firebase';
-import { User } from 'firebase/auth';
-import { Loader2, Database, ExternalLink, LogOut, Search, XCircle, FileSpreadsheet, RefreshCcw } from 'lucide-react';
+import { User as FirebaseUser } from 'firebase/auth';
+import { Loader2, Database, ExternalLink, LogOut, Search, XCircle, FileSpreadsheet, RefreshCcw, ChevronDown, User as UserIcon, Mail, Download } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 
 export default function App() {
-  const [user, setUser] = useState<User | null>(null);
+  const [user, setUser] = useState<FirebaseUser | null>(null);
   const [token, setToken] = useState<string | null>(null);
   const [spreadsheetId, setSpreadsheetId] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
@@ -20,7 +22,39 @@ export default function App() {
   const [mergedRecords, setMergedRecords] = useState<string[][]>([]);
   const [loadingMerged, setLoadingMerged] = useState(false);
   const [activeTab, setActiveTab] = useState<'import' | 'merged'>('import');
-  const [error, setError] = useState<string | null>(null);
+  const [showProfileMenu, setShowProfileMenu] = useState(false);
+  const [error, setError] = useState<React.ReactNode>(null);
+  const [debugInfo, setDebugInfo] = useState<string | null>(null);
+
+  const [languageFilter, setLanguageFilter] = useState<string>('ALL');
+  const [posFilter, setPosFilter] = useState<string>('ALL');
+  const [noReadingFilter, setNoReadingFilter] = useState<boolean>(false);
+
+  const availableLanguages = useMemo(() => {
+    const langs = new Set<string>();
+    mergedRecords.forEach(row => langs.add(row[2]?.trim() || ''));
+    return Array.from(langs).sort();
+  }, [mergedRecords]);
+
+  const availablePartsOfSpeech = useMemo(() => {
+    const pos = new Set<string>();
+    mergedRecords.forEach(row => pos.add(row[3]?.trim() || ''));
+    return Array.from(pos).sort();
+  }, [mergedRecords]);
+
+  const filteredRecords = useMemo(() => {
+    return mergedRecords.filter(row => {
+      if (noReadingFilter && row[0]?.trim()) return false;
+      
+      const rowLang = row[2]?.trim() || '';
+      if (languageFilter !== 'ALL' && rowLang !== languageFilter) return false;
+      
+      const rowPos = row[3]?.trim() || '';
+      if (posFilter !== 'ALL' && rowPos !== posFilter) return false;
+      
+      return true;
+    });
+  }, [mergedRecords, languageFilter, posFilter, noReadingFilter]);
 
   useEffect(() => {
     const unsubscribe = initAuth(async (u, t) => {
@@ -32,7 +66,21 @@ export default function App() {
           setSpreadsheetId(sid);
         } catch (err: any) {
           console.error("Firestore read error:", err);
-          if (err.code === 'permission-denied') {
+          if (err.message?.includes('Quota limit exceeded')) {
+            setError(
+              <span>
+                Firestore quota exceeded. Settings are being loaded from local storage. 
+                <a 
+                  href="https://console.firebase.google.com/project/moukaeritaid/firestore/databases/gboard-dictionary-importer/data?openUpgradeDialog=true" 
+                  target="_blank" 
+                  rel="noopener noreferrer"
+                  className="underline ml-1 text-red-800"
+                >
+                  Upgrade/View Usage
+                </a>
+              </span>
+            );
+          } else if (err.code === 'permission-denied') {
             setError("Permission denied accessing your settings. Please try signing in again.");
           }
         }
@@ -41,6 +89,14 @@ export default function App() {
     });
     return () => unsubscribe();
   }, []);
+
+  useEffect(() => {
+    const handleClickOutside = () => {
+      if (showProfileMenu) setShowProfileMenu(false);
+    };
+    document.addEventListener('click', handleClickOutside);
+    return () => document.removeEventListener('click', handleClickOutside);
+  }, [showProfileMenu]);
 
   const fetchMergedRecords = async () => {
     if (!token || !spreadsheetId) return;
@@ -74,7 +130,23 @@ export default function App() {
       }
     } catch (err: any) {
       console.error(err);
-      setError("Login failed: " + err.message);
+      if (err.message?.includes('Quota limit exceeded')) {
+        setError(
+          <span>
+            Firestore quota exceeded. Please check your database usage or upgrade: 
+            <a 
+              href="https://console.firebase.google.com/project/moukaeritaid/firestore/databases/gboard-dictionary-importer/data?openUpgradeDialog=true" 
+              target="_blank" 
+              rel="noopener noreferrer"
+              className="underline ml-1"
+            >
+              Firebase Console
+            </a>
+          </span>
+        );
+      } else {
+        setError("Login failed: " + err.message);
+      }
     } finally {
       setLoading(false);
     }
@@ -86,6 +158,30 @@ export default function App() {
     setToken(null);
     setResult(null);
     setError(null);
+  };
+
+  const handleDownloadZip = async () => {
+    try {
+      const zip = new JSZip();
+      
+      const header = "# Gboard Dictionary version:2\n# Gboard Dictionary format:shortcut word language_tag pos_tag\n";
+      const tsvContent = filteredRecords.map(row => row.join('\t')).join('\n');
+      const finalContent = header + tsvContent;
+      
+      zip.file("dictionary.txt", finalContent);
+      
+      const content = await zip.generateAsync({ type: "blob" });
+      
+      const pad = (n: number) => n.toString().padStart(2, '0');
+      const now = new Date();
+      const dateStr = `${now.getFullYear()}${pad(now.getMonth()+1)}${pad(now.getDate())}_${pad(now.getHours())}${pad(now.getMinutes())}${pad(now.getSeconds())}`;
+      const zipFileName = `PersonalDictionary_${dateStr}.zip`;
+      
+      saveAs(content, zipFileName);
+    } catch (err) {
+      console.error("Failed to generate ZIP", err);
+      setError("Failed to download dictionary ZIP");
+    }
   };
 
   const handleImport = async (fileIds?: any) => {
@@ -142,7 +238,23 @@ export default function App() {
       }
     } catch (err: any) {
       console.error(err);
-      setError(err.message);
+      if (err.message?.includes('Quota limit exceeded')) {
+        setError(
+          <span>
+            Firestore quota exceeded: 
+            <a 
+              href="https://console.firebase.google.com/project/moukaeritaid/firestore/databases/gboard-dictionary-importer/data?openUpgradeDialog=true" 
+              target="_blank" 
+              rel="noopener noreferrer"
+              className="underline ml-1"
+            >
+              Open Console
+            </a>
+          </span>
+        );
+      } else {
+        setError(err.message);
+      }
     } finally {
       if (fileIds) {
         setProcessingIds(prev => {
@@ -165,21 +277,117 @@ export default function App() {
   }
 
   return (
-    <div className="min-h-screen bg-slate-50 font-sans text-slate-900 p-4 md:p-8">
+    <div className="min-h-screen bg-slate-50 font-sans text-slate-900 px-[1px] pt-[2px] pb-[16px]">
       <div className="max-w-3xl mx-auto">
-        <header className="mb-12 flex items-center justify-between">
-          <div>
+        <header className="mb-[1px] flex items-center justify-end sm:justify-between">
+          <div className="hidden sm:block">
             <h1 className="text-3xl font-bold tracking-tight mb-2">Gboard Dictionary Importer</h1>
             <p className="text-slate-500">Search and import your Gboard dictionaries from Drive to Sheets.</p>
           </div>
+          
           {user && (
-            <button 
-              onClick={handleLogout}
-              className="p-2 text-slate-400 hover:text-red-500 transition-colors"
-              title="Logout"
-            >
-              <LogOut className="w-5 h-5" />
-            </button>
+            <div className="relative">
+              <button
+                onClick={(e) => {
+                  e.stopPropagation();
+                  setShowProfileMenu(!showProfileMenu);
+                }}
+                className="flex items-center gap-2 p-1 pr-3 rounded-full hover:bg-white border border-slate-200 transition-all active:scale-95 bg-white/50 backdrop-blur-sm"
+              >
+                <div className="w-8 h-8 rounded-full bg-slate-900 flex items-center justify-center text-white overflow-hidden ring-2 ring-white">
+                  {user.photoURL ? (
+                    <img src={user.photoURL} alt="" className="w-full h-full object-cover" />
+                  ) : (
+                    <UserIcon className="w-4 h-4" />
+                  )}
+                </div>
+                <ChevronDown className={`w-4 h-4 text-slate-400 transition-transform ${showProfileMenu ? 'rotate-180' : ''}`} />
+              </button>
+
+              <AnimatePresence>
+                {showProfileMenu && (
+                  <motion.div
+                    initial={{ opacity: 0, y: 10, scale: 0.95 }}
+                    animate={{ opacity: 1, y: 0, scale: 1 }}
+                    exit={{ opacity: 0, y: 10, scale: 0.95 }}
+                    className="absolute right-0 mt-2 w-72 bg-white rounded-2xl shadow-xl border border-slate-100 overflow-hidden z-50"
+                    onClick={(e) => e.stopPropagation()}
+                  >
+                    <div className="p-4 bg-slate-50/50 border-b border-slate-100">
+                      <div className="flex items-center gap-3 mb-3">
+                        <div className="w-12 h-12 rounded-full bg-slate-900 flex items-center justify-center text-white text-lg font-bold overflow-hidden ring-4 ring-white shadow-sm">
+                          {user.photoURL ? (
+                            <img src={user.photoURL} alt="" className="w-full h-full object-cover" />
+                          ) : (
+                            <span>{user.displayName?.charAt(0) || user.email?.charAt(0) || '?'}</span>
+                          )}
+                        </div>
+                        <div className="min-w-0 text-left">
+                          <p className="font-semibold text-slate-900 truncate">
+                            {user.displayName || 'Anonymous User'}
+                          </p>
+                          <p className="text-xs text-slate-500 truncate flex items-center gap-1">
+                            <Mail className="w-3 h-3" />
+                            {user.email}
+                          </p>
+                        </div>
+                      </div>
+                      <div className="text-[10px] uppercase tracking-widest font-bold text-slate-400 bg-white px-2 py-1 rounded-md border border-slate-100 inline-block">
+                        Connected Account
+                      </div>
+                    </div>
+
+                    <div className="p-3 space-y-2">
+                      {!token && (
+                        <div className="p-3 bg-amber-50 rounded-xl border border-amber-100">
+                          <div className="flex items-center gap-2 mb-2">
+                            <Database className="w-3.5 h-3.5 text-amber-600" />
+                            <p className="text-[10px] font-bold text-amber-800 uppercase tracking-wider">Access Expired</p>
+                          </div>
+                          <button 
+                            onClick={handleLogin}
+                            className="w-full text-center text-[10px] bg-amber-600 text-white py-1.5 rounded-lg hover:bg-amber-700 transition-colors font-bold shadow-sm"
+                          >
+                            Reconnect Workspace
+                          </button>
+                        </div>
+                      )}
+
+                      {spreadsheetId && (
+                        <div className="p-3 bg-slate-50 rounded-xl border border-slate-100">
+                          <div className="flex items-center justify-between mb-1.5">
+                            <div className="flex items-center gap-2">
+                              <FileSpreadsheet className="w-3.5 h-3.5 text-green-600" />
+                              <p className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">Target Sheet</p>
+                            </div>
+                            <button 
+                              onClick={() => setSpreadsheetId(null)}
+                              className="text-slate-400 hover:text-red-500 transition-colors"
+                              title="Unlink Spreadsheet"
+                            >
+                              <XCircle className="w-3.5 h-3.5" />
+                            </button>
+                          </div>
+                          <p className="text-[10px] font-mono text-slate-400 truncate bg-white p-1.5 rounded border border-slate-100">{spreadsheetId}</p>
+                        </div>
+                      )}
+                    </div>
+                    
+                    <div className="p-2 border-t border-slate-100">
+                      <button
+                        onClick={handleLogout}
+                        className="w-full flex items-center gap-3 px-4 py-3 text-sm text-red-600 hover:bg-red-50 rounded-xl transition-colors font-medium group"
+                      >
+                        <div className="w-8 h-8 rounded-lg bg-red-100 flex items-center justify-center group-hover:bg-red-200 transition-colors">
+                          <LogOut className="w-4 h-4" />
+                        </div>
+                        Sign Out
+                      </button>
+                    </div>
+                  </motion.div>
+                )}
+              </AnimatePresence>
+            </div>
           )}
         </header>
 
@@ -215,54 +423,35 @@ export default function App() {
               animate={{ opacity: 1, y: 0 }}
               className="space-y-6"
             >
-              <div className="bg-white p-8 rounded-2xl shadow-sm border border-slate-200">
-                <div className="flex items-center gap-4 mb-6">
-                  <img src={user.photoURL || ''} alt={user.displayName || ''} className="w-12 h-12 rounded-full border border-slate-100" />
-                  <div>
-                    <p className="font-medium">{user.displayName}</p>
-                    <p className="text-sm text-slate-500">{user.email}</p>
-                  </div>
-                </div>
+              {/* Tab Navigation */}
+              <div className="flex border-b border-slate-100 mb-[1px]">
+                <button
+                  onClick={() => setActiveTab('import')}
+                  className={`px-6 py-3 text-sm font-medium transition-colors border-b-2 ${
+                    activeTab === 'import' 
+                      ? 'border-slate-900 text-slate-900' 
+                      : 'border-transparent text-slate-400 hover:text-slate-600'
+                  }`}
+                >
+                  Search & Import
+                </button>
+                <button
+                  onClick={() => {
+                    setActiveTab('merged');
+                    if (mergedRecords.length === 0) fetchMergedRecords();
+                  }}
+                  className={`px-6 py-3 text-sm font-medium transition-colors border-b-2 ${
+                    activeTab === 'merged' 
+                      ? 'border-slate-900 text-slate-900' 
+                      : 'border-transparent text-slate-400 hover:text-slate-600'
+                  }`}
+                >
+                  Merged View
+                </button>
+              </div>
 
-                <div className="flex flex-col gap-4">
-                  {!token && (
-                    <div className="bg-amber-50 border border-amber-100 p-4 rounded-xl text-amber-800 text-sm mb-2">
-                      <p className="font-medium mb-1">Workspace access expired</p>
-                      <p className="mb-3 opacity-90">Please sign in again to restore access to your Google Drive and Sheets.</p>
-                      <button 
-                        onClick={handleLogin}
-                        className="text-xs bg-amber-600 text-white px-3 py-1.5 rounded-md hover:bg-amber-700 transition-colors"
-                      >
-                        Re-authorize Workspace
-                      </button>
-                    </div>
-                  )}
-
-                  {spreadsheetId && (
-                    <div className="flex items-center justify-between p-4 bg-slate-50 rounded-xl border border-slate-100">
-                      <div className="flex items-center gap-3">
-                        <FileSpreadsheet className="w-5 h-5 text-green-600" />
-                        <div>
-                          <p className="text-sm font-medium text-slate-700">Linked Spreadsheet</p>
-                          <p className="text-xs text-slate-500 font-mono truncate max-w-[200px]">{spreadsheetId}</p>
-                        </div>
-                      </div>
-                      <button 
-                        onClick={() => {
-                          if (user) {
-                             // Instead of deleting, we just clear the local state to create a new one next time
-                             // or we can allow the user to clear it in Firestore
-                             setSpreadsheetId(null);
-                          }
-                        }}
-                        className="p-2 text-slate-400 hover:text-red-500 transition-colors"
-                        title="Unlink Spreadsheet (Will create a new one on next import)"
-                      >
-                        <XCircle className="w-4 h-4" />
-                      </button>
-                    </div>
-                  )}
-
+              {activeTab === 'import' ? (
+                <>
                   <button
                     onClick={() => handleImport()}
                     disabled={importing || loading || !token || processingIds.size > 0}
@@ -284,7 +473,7 @@ export default function App() {
                     <button
                       onClick={() => handleImport()}
                       disabled={importing}
-                      className="w-full flex items-center justify-center gap-2 px-6 py-3 bg-blue-50 text-blue-700 font-medium rounded-xl hover:bg-blue-100 transition-colors disabled:opacity-50 border border-blue-100"
+                      className="w-full flex items-center justify-center gap-2 px-6 py-3 bg-blue-50 text-blue-700 font-medium rounded-xl hover:bg-blue-100 transition-colors disabled:opacity-50 border border-blue-100 mt-4"
                     >
                       {importing ? (
                         <>
@@ -299,38 +488,7 @@ export default function App() {
                       )}
                     </button>
                   )}
-                </div>
-              </div>
 
-              {/* Tab Navigation */}
-              <div className="flex border-b border-slate-100">
-                <button
-                  onClick={() => setActiveTab('import')}
-                  className={`px-6 py-3 text-sm font-medium transition-colors border-b-2 ${
-                    activeTab === 'import' 
-                      ? 'border-slate-900 text-slate-900' 
-                      : 'border-transparent text-slate-400 hover:text-slate-600'
-                  }`}
-                >
-                  Import Results
-                </button>
-                <button
-                  onClick={() => {
-                    setActiveTab('merged');
-                    if (mergedRecords.length === 0) fetchMergedRecords();
-                  }}
-                  className={`px-6 py-3 text-sm font-medium transition-colors border-b-2 ${
-                    activeTab === 'merged' 
-                      ? 'border-slate-900 text-slate-900' 
-                      : 'border-transparent text-slate-400 hover:text-slate-600'
-                  }`}
-                >
-                  Merged View
-                </button>
-              </div>
-
-              {activeTab === 'import' ? (
-                <>
                   {error && (
                     <div className="bg-red-50 border border-red-100 p-4 rounded-xl text-red-700 text-sm">
                       {error}
@@ -341,7 +499,7 @@ export default function App() {
                     <motion.div 
                       initial={{ opacity: 0, scale: 0.95 }}
                       animate={{ opacity: 1, scale: 1 }}
-                      className="bg-white p-8 rounded-2xl shadow-sm border border-slate-200"
+                      className="bg-white px-[1px] pt-[1px] pb-8 rounded-2xl shadow-sm border border-slate-200"
                     >
                       <h3 className="text-lg font-semibold mb-4">Import Summary</h3>
                       <p className="text-slate-600 mb-6">{result.message}</p>
@@ -370,6 +528,11 @@ export default function App() {
                                       <p className="font-medium text-slate-900 truncate" title={file.fileName}>
                                         {file.fileName || 'Unknown File'}
                                       </p>
+                                      {file.zipInnerFileName && (
+                                        <p className="text-[11px] text-slate-500 mt-1 truncate">
+                                          Inside ZIP: <span className="font-mono text-slate-700 bg-slate-100 px-1 py-0.5 rounded">{file.zipInnerFileName}</span>
+                                        </p>
+                                      )}
                                       <p className="text-[10px] font-mono text-slate-400 mt-1 truncate">
                                         ID: {file.fileId}
                                       </p>
@@ -393,6 +556,29 @@ export default function App() {
                                         ) : (
                                           <Database className="w-4 h-4" />
                                         )}
+                                      </button>
+                                      <button
+                                        onClick={async () => {
+                                          try {
+                                            const res = await fetch('/api/debug-zip', {
+                                              method: 'POST',
+                                              headers: { 'Content-Type': 'application/json' },
+                                              body: JSON.stringify({ fileId: file.fileId, token })
+                                            });
+                                            const data = await res.json();
+                                            if (data.lines) {
+                                              setDebugInfo("First lines of dictionary.txt:\n" + data.lines.join('\n') + "\n\nHEX:\n" + data.hex);
+                                            } else {
+                                              setDebugInfo("Debug error: " + JSON.stringify(data));
+                                            }
+                                          } catch(e: any) {
+                                            setDebugInfo("Error: " + e.message);
+                                          }
+                                        }}
+                                        className="p-1.5 text-slate-500 hover:bg-slate-100 rounded-lg transition-colors"
+                                        title="Debug raw content"
+                                      >
+                                        <Search className="w-4 h-4" />
                                       </button>
                                     </div>
                                   </div>
@@ -432,20 +618,31 @@ export default function App() {
                   )}
                 </>
               ) : (
-                <div className="bg-white p-8 rounded-2xl shadow-sm border border-slate-200">
-                  <div className="flex items-center justify-between mb-6">
+                <div className="bg-white px-[1px] pt-[1px] pb-8 rounded-2xl shadow-sm border border-slate-200">
+                  <div className="flex items-center justify-between mb-[1px] px-7 pt-[1px]">
                     <div>
                       <h3 className="text-lg font-semibold text-slate-900">Merged Dictionary</h3>
                       <p className="text-sm text-slate-500">Combined records from all sheets (duplicates removed)</p>
                     </div>
-                    <button
-                      onClick={fetchMergedRecords}
-                      disabled={loadingMerged}
-                      className="p-2 text-slate-400 hover:text-slate-600 transition-colors"
-                      title="Refresh Merged View"
-                    >
-                      <RefreshCcw className={`w-5 h-5 ${loadingMerged ? 'animate-spin' : ''}`} />
-                    </button>
+                    <div className="flex items-center gap-2">
+                      <button
+                        onClick={handleDownloadZip}
+                        disabled={loadingMerged || mergedRecords.length === 0}
+                        className="flex items-center gap-2 px-3 py-1.5 text-sm font-medium text-slate-700 bg-white border border-slate-300 rounded-lg hover:bg-slate-50 focus:ring-2 focus:ring-slate-900 focus:ring-offset-1 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                        title="Download as ZIP"
+                      >
+                        <Download className="w-4 h-4" />
+                        Download
+                      </button>
+                      <button
+                        onClick={fetchMergedRecords}
+                        disabled={loadingMerged}
+                        className="p-2 text-slate-400 hover:text-slate-600 transition-colors"
+                        title="Refresh Merged View"
+                      >
+                        <RefreshCcw className={`w-5 h-5 ${loadingMerged ? 'animate-spin' : ''}`} />
+                      </button>
+                    </div>
                   </div>
 
                   {loadingMerged ? (
@@ -454,33 +651,91 @@ export default function App() {
                       <p className="text-sm">Merging records from Sheets...</p>
                     </div>
                   ) : mergedRecords.length > 0 ? (
-                    <div className="border border-slate-100 rounded-xl overflow-hidden">
-                      <div className="overflow-x-auto">
-                        <table className="w-full text-sm text-left">
-                          <thead className="bg-slate-50 text-slate-500 font-medium border-b border-slate-100">
-                            <tr>
-                              <th className="px-4 py-3">Word</th>
-                              <th className="px-4 py-3">Reading</th>
-                              <th className="px-4 py-3">Language</th>
-                              <th className="px-4 py-3">Part of Speech</th>
-                            </tr>
-                          </thead>
-                          <tbody className="divide-y divide-slate-100">
-                            {mergedRecords.map((row, idx) => (
-                              <tr key={idx} className="hover:bg-slate-50/50 transition-colors">
-                                <td className="px-4 py-3 font-medium text-slate-900">{row[0]}</td>
-                                <td className="px-4 py-3 text-slate-600">{row[1]}</td>
-                                <td className="px-4 py-3 text-slate-500">{row[2]}</td>
-                                <td className="px-4 py-3 text-slate-400">{row[3]}</td>
-                              </tr>
+                    <>
+                      <div className="flex flex-wrap gap-4 px-7 mb-4 items-center">
+                        <label className="flex items-center gap-2 text-sm text-slate-700 cursor-pointer">
+                          <input 
+                            type="checkbox" 
+                            checked={noReadingFilter} 
+                            onChange={(e) => setNoReadingFilter(e.target.checked)} 
+                            className="rounded border-slate-300 text-slate-900 focus:ring-slate-900" 
+                          />
+                          No reading (読み無し)
+                        </label>
+                        <label className="flex items-center gap-2 text-sm text-slate-700">
+                          <span className="font-medium text-slate-500">Language:</span>
+                          <select 
+                            value={languageFilter} 
+                            onChange={(e) => setLanguageFilter(e.target.value)} 
+                            className="bg-slate-50 border border-slate-200 rounded-lg px-3 py-1.5 text-sm focus:ring-slate-900 focus:border-slate-900"
+                          >
+                            <option value="ALL">All</option>
+                            {availableLanguages.map(lang => (
+                              <option key={lang} value={lang}>{lang === '' ? '(Unspecified)' : lang}</option>
                             ))}
-                          </tbody>
-                        </table>
+                          </select>
+                        </label>
+                        <label className="flex items-center gap-2 text-sm text-slate-700">
+                          <span className="font-medium text-slate-500">Part of Speech:</span>
+                          <select 
+                            value={posFilter} 
+                            onChange={(e) => setPosFilter(e.target.value)} 
+                            className="bg-slate-50 border border-slate-200 rounded-lg px-3 py-1.5 text-sm focus:ring-slate-900 focus:border-slate-900"
+                          >
+                            <option value="ALL">All</option>
+                            {availablePartsOfSpeech.map(pos => (
+                              <option key={pos} value={pos}>{pos === '' ? '(Unspecified)' : pos}</option>
+                            ))}
+                          </select>
+                        </label>
                       </div>
-                      <div className="px-4 py-3 bg-slate-50 border-t border-slate-100 text-[10px] text-slate-400 uppercase tracking-wider font-semibold">
-                        Total unique records: {mergedRecords.length}
+
+                      <div className="border border-slate-100 rounded-xl overflow-hidden mx-4 sm:mx-7 mb-2">
+                        <div className="overflow-x-auto max-h-[60vh]">
+                          <table className="w-full text-sm text-left">
+                            <thead className="bg-slate-50 text-slate-500 font-medium border-b border-slate-100 sticky top-0">
+                              <tr>
+                                <th className="px-4 py-[1px] whitespace-nowrap">Reading (よみ)</th>
+                                <th className="px-4 py-[1px] whitespace-nowrap">Word (単語)</th>
+                                <th className="px-4 py-[1px] whitespace-nowrap">Language</th>
+                                <th className="px-4 py-[1px] whitespace-nowrap">Part of Speech</th>
+                              </tr>
+                            </thead>
+                            <tbody className="divide-y divide-slate-100">
+                              {filteredRecords.length > 0 ? (
+                                filteredRecords.map((row, idx) => (
+                                  <tr 
+                                    key={idx} 
+                                    className="hover:bg-slate-50/50 transition-colors"
+                                  >
+                                    <td className="px-4 py-[1px] font-medium text-slate-900 whitespace-nowrap">
+                                      {row[0] || <span className="text-slate-400 italic font-normal">None</span>}
+                                    </td>
+                                    <td className="px-4 py-[1px] text-slate-700 whitespace-nowrap">
+                                      {row[1] || <span className="text-slate-400 italic font-normal">None</span>}
+                                    </td>
+                                    <td className="px-4 py-[1px] text-slate-500 whitespace-nowrap">{row[2]}</td>
+                                    <td className="px-4 py-[1px] text-slate-400 whitespace-nowrap">{row[3]}</td>
+                                  </tr>
+                                ))
+                              ) : (
+                                <tr>
+                                  <td colSpan={4} className="px-4 py-12 text-center text-slate-500 bg-slate-50/50">
+                                    No records match the current filters.
+                                  </td>
+                                </tr>
+                              )}
+                            </tbody>
+                          </table>
+                        </div>
+                        <div className="px-4 py-3 bg-slate-50 border-t border-slate-100 text-[10px] text-slate-400 uppercase tracking-wider font-semibold flex justify-between">
+                          <span>Total records: {mergedRecords.length}</span>
+                          {filteredRecords.length !== mergedRecords.length && (
+                            <span className="text-blue-600">Showing {filteredRecords.length} matching</span>
+                          )}
+                        </div>
                       </div>
-                    </div>
+                    </>
                   ) : (
                     <div className="py-20 flex flex-col items-center justify-center text-slate-400 bg-slate-50 rounded-xl border border-dashed border-slate-200">
                       <Database className="w-12 h-12 mb-3 opacity-20" />
@@ -493,6 +748,25 @@ export default function App() {
           )}
         </AnimatePresence>
       </div>
+      
+      {/* Debug Modal */}
+      {debugInfo && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/50 backdrop-blur-sm">
+          <div className="bg-white rounded-xl shadow-xl w-full max-w-2xl max-h-[80vh] flex flex-col overflow-hidden">
+            <div className="px-4 py-3 border-b border-slate-100 flex justify-between items-center bg-slate-50">
+              <h3 className="font-semibold text-slate-900">Debug Info</h3>
+              <button onClick={() => setDebugInfo(null)} className="text-slate-400 hover:text-slate-600">
+                <XCircle className="w-5 h-5" />
+              </button>
+            </div>
+            <div className="p-4 overflow-y-auto">
+              <pre className="text-[10px] font-mono text-slate-700 whitespace-pre-wrap break-all bg-slate-100 p-3 rounded-lg border border-slate-200">
+                {debugInfo}
+              </pre>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

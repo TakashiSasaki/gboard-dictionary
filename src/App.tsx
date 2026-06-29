@@ -113,6 +113,8 @@ function AppContent() {
   const [error, setError] = useState<React.ReactNode>(null);
   const [debugInfo, setDebugInfo] = useState<string | null>(null);
 
+  const [languageFilter, setLanguageFilter] = useState<string>('ALL');
+  const [posFilter, setPosFilter] = useState<string>('ALL');
   const [sortColumn, setSortColumn] = useState<'reading' | 'word' | null>(null);
   const [sortDirection, setSortDirection] = useState<'asc' | 'desc'>('asc');
 
@@ -122,9 +124,27 @@ function AppContent() {
   // Determine active tab from URL path
   const activeTab = location.pathname === '/merged' ? 'merged' : 'import';
 
+  const availableLanguages = useMemo(() => {
+    const langs = new Set<string>();
+    mergedRecords.forEach(row => langs.add(row[2]?.trim() || ''));
+    return Array.from(langs).sort();
+  }, [mergedRecords]);
+
+  const availablePartsOfSpeech = useMemo(() => {
+    const pos = new Set<string>();
+    mergedRecords.forEach(row => pos.add(row[3]?.trim() || ''));
+    return Array.from(pos).sort();
+  }, [mergedRecords]);
+
   const handleSort = (column: 'reading' | 'word') => {
     if (sortColumn === column) {
-      setSortDirection(sortDirection === 'asc' ? 'desc' : 'asc');
+      if (sortDirection === 'asc') {
+        setSortDirection('desc');
+      } else {
+        // Clear sort
+        setSortColumn(null);
+        setSortDirection('asc');
+      }
     } else {
       setSortColumn(column);
       setSortDirection('asc');
@@ -132,10 +152,18 @@ function AppContent() {
   };
 
   const filteredRecords = useMemo(() => {
-    let result = [...mergedRecords];
+    let result = mergedRecords.filter(row => {
+      const rowLang = row[2]?.trim() || '';
+      if (languageFilter !== 'ALL' && rowLang !== languageFilter) return false;
+      
+      const rowPos = row[3]?.trim() || '';
+      if (posFilter !== 'ALL' && rowPos !== posFilter) return false;
+      
+      return true;
+    });
 
     if (sortColumn) {
-      result = result.sort((a, b) => {
+      result = [...result].sort((a, b) => {
         const colIndex = sortColumn === 'reading' ? 0 : 1;
         const valA = (a[colIndex] || '').toLowerCase();
         const valB = (b[colIndex] || '').toLowerCase();
@@ -147,7 +175,7 @@ function AppContent() {
     }
 
     return result;
-  }, [mergedRecords, sortColumn, sortDirection]);
+  }, [mergedRecords, languageFilter, posFilter, sortColumn, sortDirection]);
 
   useEffect(() => {
     const unsubscribe = initAuth(async (u, t) => {
@@ -806,7 +834,76 @@ function AppContent() {
                     </div>
                   ) : mergedRecords.length > 0 ? (
                     <>
-                      <div className="border border-slate-100 rounded-xl overflow-hidden mx-4 sm:mx-7 mb-2 mt-4">
+                      <div className="px-4 sm:px-7 mb-4 mt-6 flex flex-col gap-5">
+                        <div className="grid grid-cols-2 gap-4">
+                          <label className="flex flex-col gap-1.5 text-sm text-slate-700">
+                            <span className="font-medium text-slate-500">Language</span>
+                            <select 
+                              value={languageFilter} 
+                              onChange={(e) => setLanguageFilter(e.target.value)} 
+                              className="bg-slate-50 border border-slate-200 rounded-lg px-3 py-2.5 text-sm focus:ring-slate-900 focus:border-slate-900 w-full"
+                            >
+                              <option value="ALL">All</option>
+                              {availableLanguages.map(lang => (
+                                <option key={lang} value={lang}>{lang === '' ? '(Unspecified)' : lang}</option>
+                              ))}
+                            </select>
+                          </label>
+                          <label className="flex flex-col gap-1.5 text-sm text-slate-700">
+                            <span className="font-medium text-slate-500">Part of Speech</span>
+                            <select 
+                              value={posFilter} 
+                              onChange={(e) => setPosFilter(e.target.value)} 
+                              className="bg-slate-50 border border-slate-200 rounded-lg px-3 py-2.5 text-sm focus:ring-slate-900 focus:border-slate-900 w-full"
+                            >
+                              <option value="ALL">All</option>
+                              {availablePartsOfSpeech.map(pos => (
+                                <option key={pos} value={pos}>{pos === '' ? '(Unspecified)' : pos}</option>
+                              ))}
+                            </select>
+                          </label>
+                        </div>
+                        <div className="flex flex-col sm:flex-row sm:items-center gap-3">
+                          <span className="font-medium text-slate-500 text-sm w-16">Sort by:</span>
+                          <div className="flex bg-slate-50 border border-slate-200 rounded-lg p-1 w-full sm:w-auto">
+                            <button
+                              onClick={() => {
+                                setSortColumn('reading');
+                                setSortDirection(sortColumn === 'reading' && sortDirection === 'asc' ? 'desc' : 'asc');
+                              }}
+                              className={`flex-1 sm:px-4 py-1.5 text-sm font-medium rounded-md flex items-center justify-center gap-1.5 transition-colors ${sortColumn === 'reading' ? 'bg-white shadow-sm text-slate-900 border border-slate-200' : 'text-slate-500 hover:text-slate-700'}`}
+                            >
+                              Reading
+                              {sortColumn === 'reading' && (
+                                sortDirection === 'asc' ? <ArrowUp className="w-3.5 h-3.5 text-blue-600" /> : <ArrowDown className="w-3.5 h-3.5 text-blue-600" />
+                              )}
+                            </button>
+                            <button
+                              onClick={() => {
+                                setSortColumn('word');
+                                setSortDirection(sortColumn === 'word' && sortDirection === 'asc' ? 'desc' : 'asc');
+                              }}
+                              className={`flex-1 sm:px-4 py-1.5 text-sm font-medium rounded-md flex items-center justify-center gap-1.5 transition-colors ${sortColumn === 'word' ? 'bg-white shadow-sm text-slate-900 border border-slate-200' : 'text-slate-500 hover:text-slate-700'}`}
+                            >
+                              Word
+                              {sortColumn === 'word' && (
+                                sortDirection === 'asc' ? <ArrowUp className="w-3.5 h-3.5 text-blue-600" /> : <ArrowDown className="w-3.5 h-3.5 text-blue-600" />
+                              )}
+                            </button>
+                            <button
+                              onClick={() => {
+                                setSortColumn(null);
+                                setSortDirection('asc');
+                              }}
+                              className={`sm:px-4 px-3 py-1.5 text-sm font-medium rounded-md transition-colors ${!sortColumn ? 'bg-white shadow-sm text-slate-900 border border-slate-200' : 'text-slate-500 hover:text-slate-700'}`}
+                            >
+                              None
+                            </button>
+                          </div>
+                        </div>
+                      </div>
+
+                      <div className="border border-slate-100 rounded-xl overflow-hidden mx-4 sm:mx-7 mb-2">
                         <div className="overflow-x-auto max-h-[60vh]">
                           <table className="w-full text-sm text-left">
                             <thead className="bg-slate-50 text-slate-500 font-medium border-b border-slate-100 sticky top-0">

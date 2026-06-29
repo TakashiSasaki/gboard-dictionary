@@ -519,8 +519,8 @@ function AppContent() {
 
                 <div className="relative z-10 flex flex-col items-center">
                   <div className="mb-8 flex justify-center">
-                    <div className="w-24 h-24 bg-white/10 backdrop-blur-xl rounded-3xl flex items-center justify-center border border-white/20 shadow-2xl">
-                      <Database className="w-10 h-10 text-blue-400" />
+                    <div className="w-24 h-24 bg-white/10 backdrop-blur-xl rounded-3xl flex items-center justify-center border border-white/20 shadow-2xl p-4 overflow-hidden">
+                      <img src="/icon.svg" alt="App Icon" className="w-full h-full object-contain" />
                     </div>
                   </div>
                   <h2 className="text-3xl sm:text-4xl font-bold mb-6 text-white tracking-tight">Sync Gboard to Google Sheets</h2>

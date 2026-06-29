@@ -1,0 +1,35 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">
+  <defs>
+    <linearGradient id="bgGradient" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#1e293b" />
+      <stop offset="100%" stop-color="#0f172a" />
+    </linearGradient>
+    <linearGradient id="blueGradient" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#60a5fa" />
+      <stop offset="100%" stop-color="#2563eb" />
+    </linearGradient>
+  </defs>
+  
+  <rect width="512" height="512" rx="112" fill="url(#bgGradient)"/>
+  
+  <g transform="translate(100, 120)">
+    <path d="M40,50 L40,250 C40,266.568542 53.4314575,280 70,280 L250,280 C266.568542,280 280,266.568542 280,250 L280,50 C280,33.4314575 266.568542,20 250,20 L70,20 C53.4314575,20 40,33.4314575 40,50 Z" fill="none" stroke="white" stroke-width="24" stroke-linecap="round" stroke-linejoin="round"/>
+    
+    <path d="M160,20 L160,280" fill="none" stroke="white" stroke-width="24" stroke-linecap="round" stroke-linejoin="round"/>
+    
+    <path d="M80,80 L120,80" fill="none" stroke="url(#blueGradient)" stroke-width="16" stroke-linecap="round"/>
+    <path d="M80,140 L120,140" fill="none" stroke="url(#blueGradient)" stroke-width="16" stroke-linecap="round"/>
+    <path d="M80,200 L120,200" fill="none" stroke="url(#blueGradient)" stroke-width="16" stroke-linecap="round"/>
+    
+    <path d="M200,80 L240,80" fill="none" stroke="url(#blueGradient)" stroke-width="16" stroke-linecap="round"/>
+    <path d="M200,140 L240,140" fill="none" stroke="url(#blueGradient)" stroke-width="16" stroke-linecap="round"/>
+    <path d="M200,200 L240,200" fill="none" stroke="url(#blueGradient)" stroke-width="16" stroke-linecap="round"/>
+  </g>
+  
+  <g transform="translate(256, 380)">
+    <path d="M-60,0 A60,60 0 1,1 60,0" fill="none" stroke="url(#blueGradient)" stroke-width="24" stroke-linecap="round"/>
+    <path d="M40,-20 L60,0 L80,-20" fill="none" stroke="url(#blueGradient)" stroke-width="24" stroke-linecap="round" stroke-linejoin="round"/>
+    <path d="M60,0 A60,60 0 1,1 -60,0" fill="none" stroke="white" stroke-width="24" stroke-linecap="round"/>
+    <path d="M-40,20 L-60,0 L-80,20" fill="none" stroke="white" stroke-width="24" stroke-linecap="round" stroke-linejoin="round"/>
+  </g>
+</svg>

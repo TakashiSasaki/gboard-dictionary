@@ -8,10 +8,97 @@ import JSZip from 'jszip';
 import { saveAs } from 'file-saver';
 import { initAuth, googleSignIn, logout, getUserSpreadsheetId, setUserSpreadsheetId } from './firebase';
 import { User as FirebaseUser } from 'firebase/auth';
-import { Loader2, Database, ExternalLink, LogOut, Search, XCircle, FileSpreadsheet, RefreshCcw, ChevronDown, User as UserIcon, Mail, Download } from 'lucide-react';
+import { Loader2, Database, ExternalLink, LogOut, Search, XCircle, FileSpreadsheet, RefreshCcw, ChevronDown, User as UserIcon, Mail, Download, BookOpen, Info } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
+import { BrowserRouter, Routes, Route, Link, useLocation, useNavigate } from 'react-router-dom';
 
-export default function App() {
+const FormatDocs = () => (
+  <div className="bg-white p-8 rounded-2xl shadow-sm border border-slate-200 text-slate-700 text-left w-full max-w-3xl mx-auto mt-8">
+    <div className="mb-6 flex justify-between items-center">
+      <h3 className="text-2xl font-bold text-slate-900">Gboard User Dictionary Format</h3>
+      <Link to="/" className="text-blue-600 hover:text-blue-700 hover:underline font-medium text-sm">
+        Back to App
+      </Link>
+    </div>
+    <p className="mb-4 text-slate-600">Based on our development and testing, here are the technical specifications for the Gboard user dictionary format (<code>dictionary.txt</code> inside the <code>Personal Dictionary.zip</code> file).</p>
+    
+    <h4 className="text-lg font-semibold mt-6 mb-2 text-slate-900">1. Header Structure</h4>
+    <p className="mb-3 text-slate-600">The file must begin with exactly two header lines. Crucially, the second line dictates the column structure using <strong>hard tabs</strong> (<code>\t</code>), not spaces, although spaces are sometimes seen in older exports. For safe importing, the following exact format is confirmed to work:</p>
+    <pre className="bg-slate-50 p-4 rounded-lg overflow-x-auto text-sm border border-slate-100 text-slate-800">
+# Gboard Dictionary version:2{'\n'}
+# Gboard Dictionary format:shortcut{'\t'}word{'\t'}language_tag{'\t'}pos_tag
+    </pre>
+    
+    <h4 className="text-lg font-semibold mt-6 mb-2 text-slate-900">2. Body Structure (TSV)</h4>
+    <p className="mb-3 text-slate-600">Following the header, the records are defined in Tab-Separated Values (TSV) format.</p>
+    <ul className="list-disc pl-5 space-y-1 mb-4 text-slate-600">
+      <li><strong>Line Endings:</strong> Unix-style line endings (<code>\n</code>) must be used. Carriage returns (<code>\r\n</code>) will cause unknown errors during import on Android devices.</li>
+      <li><strong>Delimiter:</strong> Columns must be separated by a single hard tab (<code>\t</code>).</li>
+    </ul>
+
+    <h4 className="text-lg font-semibold mt-6 mb-2 text-slate-900">3. Columns</h4>
+    <ul className="list-disc pl-5 space-y-1 mb-4 text-slate-600">
+      <li><code>shortcut</code> (Optional) - The reading/yomi used to trigger the word.</li>
+      <li><code>word</code> (Required) - The actual word to be inputted.</li>
+      <li><code>language_tag</code> (Optional) - e.g., <code>ja-JP</code>, <code>en-US</code>. If omitted or empty, it often defaults to all languages or the system default.</li>
+      <li><code>pos_tag</code> (Optional) - Part of speech, e.g., <code>noun</code>. Rarely strict.</li>
+    </ul>
+
+    <h4 className="text-lg font-semibold mt-6 mb-2 text-slate-900">4. Multi-Language Import Behavior</h4>
+    <p className="text-slate-600">It is fully supported to have records for multiple different languages (e.g., Japanese and English) within the <strong>same</strong> <code>dictionary.txt</code> file. Gboard parses the <code>language_tag</code> column per row and correctly categorizes them in the app's internal database.</p>
+  </div>
+);
+
+const AboutApp = () => (
+  <div className="bg-white p-8 rounded-2xl shadow-sm border border-slate-200 text-slate-700 text-left w-full max-w-3xl mx-auto mt-8">
+    <div className="mb-6 flex justify-between items-center">
+      <h3 className="text-2xl font-bold text-slate-900">About Gboard Dictionary Importer</h3>
+      <Link to="/" className="text-blue-600 hover:text-blue-700 hover:underline font-medium text-sm">
+        Back to App
+      </Link>
+    </div>
+    
+    <p className="mb-6 text-slate-600 leading-relaxed">
+      Gboard Dictionary Importer is a utility application designed to help Android users manage, backup, and synchronize their personal Gboard dictionaries across multiple devices using <strong>Google Sheets as a centralized database</strong>.
+    </p>
+
+    <div className="bg-blue-50 border border-blue-100 rounded-xl p-5 mb-8">
+      <h4 className="text-blue-900 font-semibold mb-2 flex items-center gap-2">
+        <Database className="w-5 h-5 text-blue-600" />
+        Data Privacy & Storage: Are my words saved on your servers?
+      </h4>
+      <p className="text-blue-800 text-sm leading-relaxed">
+        <strong>No. Your dictionary data is NEVER saved to our databases or servers.</strong><br/><br/>
+        This application acts merely as a bridge. When you use this app, it reads the dictionary files directly from your Google Drive and writes the extracted words directly to a Google Spreadsheet owned by your Google Account. Your custom words, shortcuts, and language data reside <strong>only in your own Google Sheet</strong> and your own Google Drive.
+      </p>
+    </div>
+
+    <h4 className="text-lg font-semibold mt-6 mb-2 text-slate-900">Why should I use this app?</h4>
+    <p className="mb-4 text-slate-600 leading-relaxed">
+      When you switch phones or use multiple Android devices, your Gboard personal dictionary (the custom words you've added for faster typing) does not always sync perfectly or merge well through standard Google backups. Many users export their "Personal Dictionary.zip" to Google Drive, but combining these zip files manually is tedious and error-prone. This app automates that process, saving you time and preventing data loss.
+    </p>
+
+    <h4 className="text-lg font-semibold mt-6 mb-2 text-slate-900">How it works</h4>
+    <ul className="list-disc pl-5 space-y-2 mb-6 text-slate-600">
+      <li><strong>Connect:</strong> The app connects to your Google Account to access your Drive and Sheets.</li>
+      <li><strong>Extract & Parse:</strong> It searches your Google Drive for Gboard dictionary exports (<code>Personal Dictionary.zip</code>), extracts the <code>dictionary.txt</code> files, and parses the custom Tab-Separated format.</li>
+      <li><strong>Sync to Sheets:</strong> It writes these records into a dedicated Google Spreadsheet (named <code>Gboard_Dictionary_Merged</code>), creating a permanent, accessible backup that you control.</li>
+      <li><strong>Merge & Deduplicate:</strong> It reads from the spreadsheet, automatically removes duplicate entries, and provides a clean interface to download a newly consolidated <code>dictionary.txt</code> file ready to be imported back into Gboard on any device.</li>
+    </ul>
+
+    <h4 className="text-lg font-semibold mt-6 mb-2 text-slate-900">Required Permissions</h4>
+    <div className="text-slate-600 leading-relaxed">
+      To function, this application requests two specific Google permissions during sign-in:
+      <ul className="list-disc pl-5 space-y-1 mt-2 mb-4">
+        <li><strong>Google Drive Read Access:</strong> Required to locate and read your <code>Personal Dictionary.zip</code> files.</li>
+        <li><strong>Google Sheets Access:</strong> Required to create and update the spreadsheet where your merged dictionary will be stored.</li>
+      </ul>
+      <p>You can revoke these permissions at any time from your Google Account security settings.</p>
+    </div>
+  </div>
+);
+
+function AppContent() {
   const [user, setUser] = useState<FirebaseUser | null>(null);
   const [token, setToken] = useState<string | null>(null);
   const [spreadsheetId, setSpreadsheetId] = useState<string | null>(null);
@@ -21,7 +108,7 @@ export default function App() {
   const [result, setResult] = useState<any>(null);
   const [mergedRecords, setMergedRecords] = useState<string[][]>([]);
   const [loadingMerged, setLoadingMerged] = useState(false);
-  const [activeTab, setActiveTab] = useState<'import' | 'merged'>('import');
+  
   const [showProfileMenu, setShowProfileMenu] = useState(false);
   const [error, setError] = useState<React.ReactNode>(null);
   const [debugInfo, setDebugInfo] = useState<string | null>(null);
@@ -29,6 +116,12 @@ export default function App() {
   const [languageFilter, setLanguageFilter] = useState<string>('ALL');
   const [posFilter, setPosFilter] = useState<string>('ALL');
   const [noReadingFilter, setNoReadingFilter] = useState<boolean>(false);
+
+  const location = useLocation();
+  const navigate = useNavigate();
+
+  // Determine active tab from URL path
+  const activeTab = location.pathname === '/merged' ? 'merged' : 'import';
 
   const availableLanguages = useMemo(() => {
     const langs = new Set<string>();
@@ -117,6 +210,12 @@ export default function App() {
       setLoadingMerged(false);
     }
   };
+  
+  useEffect(() => {
+    if (activeTab === 'merged' && mergedRecords.length === 0 && user && token && spreadsheetId) {
+      fetchMergedRecords();
+    }
+  }, [activeTab, user, token, spreadsheetId]);
 
   const handleLogin = async () => {
     try {
@@ -164,7 +263,7 @@ export default function App() {
     try {
       const zip = new JSZip();
       
-      const header = "# Gboard Dictionary version:2\n# Gboard Dictionary format:shortcut word language_tag pos_tag\n";
+      const header = "# Gboard Dictionary version:2\n# Gboard Dictionary format:shortcut\tword\tlanguage_tag\tpos_tag\n";
       const tsvContent = filteredRecords.map(row => row.join('\t')).join('\n');
       const finalContent = header + tsvContent;
       
@@ -187,8 +286,6 @@ export default function App() {
   const handleImport = async (fileIds?: any) => {
     if (!token) return;
 
-    // If called as an event handler, fileIds will be the Event object.
-    // We only want to treat it as fileIds if it's an Array.
     const actualFileIds = Array.isArray(fileIds) ? fileIds : undefined;
     
     if (actualFileIds) {
@@ -221,7 +318,6 @@ export default function App() {
         setSpreadsheetId(data.spreadsheetId);
       }
 
-      // If it's a specific import, merge results into existing ones if available
       if (actualFileIds && result?.results) {
         const newResults = [...result.results];
         data.results.forEach((res: any) => {
@@ -279,116 +375,123 @@ export default function App() {
   return (
     <div className="min-h-screen bg-slate-50 font-sans text-slate-900 px-[1px] pt-[2px] pb-[16px]">
       <div className="max-w-3xl mx-auto">
-        <header className="mb-[1px] flex items-center justify-end sm:justify-between">
+        <header className="mb-[1px] flex items-center justify-end sm:justify-between py-4">
           <div className="hidden sm:block">
             <h1 className="text-3xl font-bold tracking-tight mb-2">Gboard Dictionary Importer</h1>
             <p className="text-slate-500">Search and import your Gboard dictionaries from Drive to Sheets.</p>
           </div>
           
-          {user && (
-            <div className="relative">
-              <button
-                onClick={(e) => {
-                  e.stopPropagation();
-                  setShowProfileMenu(!showProfileMenu);
-                }}
-                className="flex items-center gap-2 p-1 pr-3 rounded-full hover:bg-white border border-slate-200 transition-all active:scale-95 bg-white/50 backdrop-blur-sm"
-              >
-                <div className="w-8 h-8 rounded-full bg-slate-900 flex items-center justify-center text-white overflow-hidden ring-2 ring-white">
-                  {user.photoURL ? (
-                    <img src={user.photoURL} alt="" className="w-full h-full object-cover" />
-                  ) : (
-                    <UserIcon className="w-4 h-4" />
-                  )}
-                </div>
-                <ChevronDown className={`w-4 h-4 text-slate-400 transition-transform ${showProfileMenu ? 'rotate-180' : ''}`} />
-              </button>
+          <div className="flex items-center gap-4">
+            <Link to="/docs" className="text-slate-500 hover:text-slate-900 transition-colors flex items-center gap-1.5 text-sm font-medium">
+              <BookOpen className="w-4 h-4" />
+              <span className="hidden sm:inline">Technical Docs</span>
+            </Link>
 
-              <AnimatePresence>
-                {showProfileMenu && (
-                  <motion.div
-                    initial={{ opacity: 0, y: 10, scale: 0.95 }}
-                    animate={{ opacity: 1, y: 0, scale: 1 }}
-                    exit={{ opacity: 0, y: 10, scale: 0.95 }}
-                    className="absolute right-0 mt-2 w-72 bg-white rounded-2xl shadow-xl border border-slate-100 overflow-hidden z-50"
-                    onClick={(e) => e.stopPropagation()}
-                  >
-                    <div className="p-4 bg-slate-50/50 border-b border-slate-100">
-                      <div className="flex items-center gap-3 mb-3">
-                        <div className="w-12 h-12 rounded-full bg-slate-900 flex items-center justify-center text-white text-lg font-bold overflow-hidden ring-4 ring-white shadow-sm">
-                          {user.photoURL ? (
-                            <img src={user.photoURL} alt="" className="w-full h-full object-cover" />
-                          ) : (
-                            <span>{user.displayName?.charAt(0) || user.email?.charAt(0) || '?'}</span>
-                          )}
-                        </div>
-                        <div className="min-w-0 text-left">
-                          <p className="font-semibold text-slate-900 truncate">
-                            {user.displayName || 'Anonymous User'}
-                          </p>
-                          <p className="text-xs text-slate-500 truncate flex items-center gap-1">
-                            <Mail className="w-3 h-3" />
-                            {user.email}
-                          </p>
-                        </div>
-                      </div>
-                      <div className="text-[10px] uppercase tracking-widest font-bold text-slate-400 bg-white px-2 py-1 rounded-md border border-slate-100 inline-block">
-                        Connected Account
-                      </div>
-                    </div>
+            {user && (
+              <div className="relative">
+                <button
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    setShowProfileMenu(!showProfileMenu);
+                  }}
+                  className="flex items-center gap-2 p-1 pr-3 rounded-full hover:bg-white border border-slate-200 transition-all active:scale-95 bg-white/50 backdrop-blur-sm"
+                >
+                  <div className="w-8 h-8 rounded-full bg-slate-900 flex items-center justify-center text-white overflow-hidden ring-2 ring-white">
+                    {user.photoURL ? (
+                      <img src={user.photoURL} alt="" className="w-full h-full object-cover" />
+                    ) : (
+                      <UserIcon className="w-4 h-4" />
+                    )}
+                  </div>
+                  <ChevronDown className={`w-4 h-4 text-slate-400 transition-transform ${showProfileMenu ? 'rotate-180' : ''}`} />
+                </button>
 
-                    <div className="p-3 space-y-2">
-                      {!token && (
-                        <div className="p-3 bg-amber-50 rounded-xl border border-amber-100">
-                          <div className="flex items-center gap-2 mb-2">
-                            <Database className="w-3.5 h-3.5 text-amber-600" />
-                            <p className="text-[10px] font-bold text-amber-800 uppercase tracking-wider">Access Expired</p>
+                <AnimatePresence>
+                  {showProfileMenu && (
+                    <motion.div
+                      initial={{ opacity: 0, y: 10, scale: 0.95 }}
+                      animate={{ opacity: 1, y: 0, scale: 1 }}
+                      exit={{ opacity: 0, y: 10, scale: 0.95 }}
+                      className="absolute right-0 mt-2 w-72 bg-white rounded-2xl shadow-xl border border-slate-100 overflow-hidden z-50"
+                      onClick={(e) => e.stopPropagation()}
+                    >
+                      <div className="p-4 bg-slate-50/50 border-b border-slate-100">
+                        <div className="flex items-center gap-3 mb-3">
+                          <div className="w-12 h-12 rounded-full bg-slate-900 flex items-center justify-center text-white text-lg font-bold overflow-hidden ring-4 ring-white shadow-sm">
+                            {user.photoURL ? (
+                              <img src={user.photoURL} alt="" className="w-full h-full object-cover" />
+                            ) : (
+                              <span>{user.displayName?.charAt(0) || user.email?.charAt(0) || '?'}</span>
+                            )}
                           </div>
-                          <button 
-                            onClick={handleLogin}
-                            className="w-full text-center text-[10px] bg-amber-600 text-white py-1.5 rounded-lg hover:bg-amber-700 transition-colors font-bold shadow-sm"
-                          >
-                            Reconnect Workspace
-                          </button>
+                          <div className="min-w-0 text-left">
+                            <p className="font-semibold text-slate-900 truncate">
+                              {user.displayName || 'Anonymous User'}
+                            </p>
+                            <p className="text-xs text-slate-500 truncate flex items-center gap-1">
+                              <Mail className="w-3 h-3" />
+                              {user.email}
+                            </p>
+                          </div>
                         </div>
-                      )}
+                        <div className="text-[10px] uppercase tracking-widest font-bold text-slate-400 bg-white px-2 py-1 rounded-md border border-slate-100 inline-block">
+                          Connected Account
+                        </div>
+                      </div>
 
-                      {spreadsheetId && (
-                        <div className="p-3 bg-slate-50 rounded-xl border border-slate-100">
-                          <div className="flex items-center justify-between mb-1.5">
-                            <div className="flex items-center gap-2">
-                              <FileSpreadsheet className="w-3.5 h-3.5 text-green-600" />
-                              <p className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">Target Sheet</p>
+                      <div className="p-3 space-y-2">
+                        {!token && (
+                          <div className="p-3 bg-amber-50 rounded-xl border border-amber-100">
+                            <div className="flex items-center gap-2 mb-2">
+                              <Database className="w-3.5 h-3.5 text-amber-600" />
+                              <p className="text-[10px] font-bold text-amber-800 uppercase tracking-wider">Access Expired</p>
                             </div>
                             <button 
-                              onClick={() => setSpreadsheetId(null)}
-                              className="text-slate-400 hover:text-red-500 transition-colors"
-                              title="Unlink Spreadsheet"
+                              onClick={handleLogin}
+                              className="w-full text-center text-[10px] bg-amber-600 text-white py-1.5 rounded-lg hover:bg-amber-700 transition-colors font-bold shadow-sm"
                             >
-                              <XCircle className="w-3.5 h-3.5" />
+                              Reconnect Workspace
                             </button>
                           </div>
-                          <p className="text-[10px] font-mono text-slate-400 truncate bg-white p-1.5 rounded border border-slate-100">{spreadsheetId}</p>
-                        </div>
-                      )}
-                    </div>
-                    
-                    <div className="p-2 border-t border-slate-100">
-                      <button
-                        onClick={handleLogout}
-                        className="w-full flex items-center gap-3 px-4 py-3 text-sm text-red-600 hover:bg-red-50 rounded-xl transition-colors font-medium group"
-                      >
-                        <div className="w-8 h-8 rounded-lg bg-red-100 flex items-center justify-center group-hover:bg-red-200 transition-colors">
-                          <LogOut className="w-4 h-4" />
-                        </div>
-                        Sign Out
-                      </button>
-                    </div>
-                  </motion.div>
-                )}
-              </AnimatePresence>
-            </div>
-          )}
+                        )}
+
+                        {spreadsheetId && (
+                          <div className="p-3 bg-slate-50 rounded-xl border border-slate-100">
+                            <div className="flex items-center justify-between mb-1.5">
+                              <div className="flex items-center gap-2">
+                                <FileSpreadsheet className="w-3.5 h-3.5 text-green-600" />
+                                <p className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">Target Sheet</p>
+                              </div>
+                              <button 
+                                onClick={() => setSpreadsheetId(null)}
+                                className="text-slate-400 hover:text-red-500 transition-colors"
+                                title="Unlink Spreadsheet"
+                              >
+                                <XCircle className="w-3.5 h-3.5" />
+                              </button>
+                            </div>
+                            <p className="text-[10px] font-mono text-slate-400 truncate bg-white p-1.5 rounded border border-slate-100">{spreadsheetId}</p>
+                          </div>
+                        )}
+                      </div>
+                      
+                      <div className="p-2 border-t border-slate-100">
+                        <button
+                          onClick={handleLogout}
+                          className="w-full flex items-center gap-3 px-4 py-3 text-sm text-red-600 hover:bg-red-50 rounded-xl transition-colors font-medium group"
+                        >
+                          <div className="w-8 h-8 rounded-lg bg-red-100 flex items-center justify-center group-hover:bg-red-200 transition-colors">
+                            <LogOut className="w-4 h-4" />
+                          </div>
+                          Sign Out
+                        </button>
+                      </div>
+                    </motion.div>
+                  )}
+                </AnimatePresence>
+              </div>
+            )}
+          </div>
         </header>
 
         <AnimatePresence mode="wait">
@@ -398,35 +501,70 @@ export default function App() {
               initial={{ opacity: 0, y: 20 }}
               animate={{ opacity: 1, y: 0 }}
               exit={{ opacity: 0, y: -20 }}
-              className="bg-white p-12 rounded-2xl shadow-sm border border-slate-200 text-center"
+              className="flex flex-col gap-6"
             >
-              <div className="mb-8 flex justify-center">
-                <div className="w-16 h-16 bg-blue-50 rounded-2xl flex items-center justify-center">
-                  <Database className="w-8 h-8 text-blue-600" />
+              <div className="relative overflow-hidden bg-slate-900 px-8 py-16 sm:p-20 rounded-[2rem] shadow-2xl text-center mt-4">
+                <div className="absolute inset-0 overflow-hidden pointer-events-none">
+                  <motion.div 
+                    animate={{ scale: [1, 1.2, 1], x: [0, 50, 0], y: [0, 30, 0] }}
+                    transition={{ duration: 20, repeat: Infinity, ease: "easeInOut" }}
+                    className="absolute -top-1/2 -left-1/4 w-full h-full bg-blue-500/20 blur-[120px] rounded-full"
+                  />
+                  <motion.div 
+                    animate={{ scale: [1, 1.5, 1], x: [0, -50, 0], y: [0, -30, 0] }}
+                    transition={{ duration: 25, repeat: Infinity, ease: "easeInOut" }}
+                    className="absolute -bottom-1/2 -right-1/4 w-full h-full bg-indigo-500/20 blur-[120px] rounded-full"
+                  />
+                </div>
+
+                <div className="relative z-10 flex flex-col items-center">
+                  <div className="mb-8 flex justify-center">
+                    <div className="w-24 h-24 bg-white/10 backdrop-blur-xl rounded-3xl flex items-center justify-center border border-white/20 shadow-2xl">
+                      <Database className="w-10 h-10 text-blue-400" />
+                    </div>
+                  </div>
+                  <h2 className="text-3xl sm:text-4xl font-bold mb-6 text-white tracking-tight">Sync Gboard to Google Sheets</h2>
+                  <p className="text-slate-300 mb-8 max-w-xl mx-auto leading-relaxed text-lg">
+                    Automatically extract, combine, and backup all your Android Gboard user dictionary words across multiple devices directly into a centralized Google Spreadsheet.
+                  </p>
+                  
+                  <div className="mb-8">
+                    <Link
+                      to="/about"
+                      className="inline-flex items-center gap-2 px-6 py-2.5 bg-blue-500/10 text-blue-300 hover:text-blue-200 hover:bg-blue-500/20 font-medium rounded-full transition-all border border-blue-500/20"
+                    >
+                      <Info className="w-4 h-4" />
+                      About This App
+                    </Link>
+                  </div>
+
+                  <div className="flex flex-col sm:flex-row gap-4 justify-center items-center w-full sm:w-auto">
+                    <button
+                      onClick={handleLogin}
+                      className="w-full sm:w-auto inline-flex items-center justify-center px-8 py-4 bg-white text-slate-900 font-bold rounded-xl hover:bg-slate-100 transition-all shadow-[0_0_40px_-10px_rgba(255,255,255,0.3)] active:scale-95"
+                    >
+                      Sign in with Google
+                    </button>
+                    <Link
+                      to="/docs"
+                      className="w-full sm:w-auto inline-flex items-center justify-center px-8 py-4 bg-white/5 text-white font-medium rounded-xl hover:bg-white/10 border border-white/10 transition-all backdrop-blur-sm active:scale-95"
+                    >
+                      Technical Details
+                    </Link>
+                  </div>
                 </div>
               </div>
-              <h2 className="text-xl font-semibold mb-4">Connect to Google</h2>
-              <p className="text-slate-500 mb-8 max-w-sm mx-auto">
-                We need access to your Google Drive to find dictionary files and Google Sheets to save the data.
-              </p>
-              <button
-                onClick={handleLogin}
-                className="inline-flex items-center justify-center px-6 py-3 bg-blue-600 text-white font-medium rounded-lg hover:bg-blue-700 transition-colors shadow-sm"
-              >
-                Sign in with Google
-              </button>
             </motion.div>
           ) : (
             <motion.div 
               key="dashboard"
               initial={{ opacity: 0, y: 20 }}
               animate={{ opacity: 1, y: 0 }}
-              className="space-y-6"
+              className="space-y-6 mt-4"
             >
-              {/* Tab Navigation */}
               <div className="flex border-b border-slate-100 mb-[1px]">
-                <button
-                  onClick={() => setActiveTab('import')}
+                <Link
+                  to="/"
                   className={`px-6 py-3 text-sm font-medium transition-colors border-b-2 ${
                     activeTab === 'import' 
                       ? 'border-slate-900 text-slate-900' 
@@ -434,12 +572,9 @@ export default function App() {
                   }`}
                 >
                   Search & Import
-                </button>
-                <button
-                  onClick={() => {
-                    setActiveTab('merged');
-                    if (mergedRecords.length === 0) fetchMergedRecords();
-                  }}
+                </Link>
+                <Link
+                  to="/merged"
                   className={`px-6 py-3 text-sm font-medium transition-colors border-b-2 ${
                     activeTab === 'merged' 
                       ? 'border-slate-900 text-slate-900' 
@@ -447,10 +582,10 @@ export default function App() {
                   }`}
                 >
                   Merged View
-                </button>
+                </Link>
               </div>
 
-              {activeTab === 'import' ? (
+              {activeTab === 'import' && (
                 <>
                   <button
                     onClick={() => handleImport()}
@@ -499,24 +634,26 @@ export default function App() {
                     <motion.div 
                       initial={{ opacity: 0, scale: 0.95 }}
                       animate={{ opacity: 1, scale: 1 }}
-                      className="bg-white px-[1px] pt-[1px] pb-8 rounded-2xl shadow-sm border border-slate-200"
+                      className="bg-white px-[1px] pt-[1px] pb-8 rounded-2xl shadow-sm border border-slate-200 mt-4"
                     >
-                      <h3 className="text-lg font-semibold mb-4">Import Summary</h3>
-                      <p className="text-slate-600 mb-6">{result.message}</p>
+                      <h3 className="text-lg font-semibold mb-4 px-4 pt-4">Import Summary</h3>
+                      <p className="text-slate-600 mb-6 px-4">{result.message}</p>
                       
                       {result.spreadsheetUrl && (
-                        <a 
-                          href={result.spreadsheetUrl} 
-                          target="_blank" 
-                          rel="noopener noreferrer"
-                          className="inline-flex items-center gap-2 px-4 py-2 bg-green-50 text-green-700 rounded-lg hover:bg-green-100 transition-colors font-medium text-sm mb-6"
-                        >
-                          View Spreadsheet <ExternalLink className="w-4 h-4" />
-                        </a>
+                        <div className="px-4">
+                          <a 
+                            href={result.spreadsheetUrl} 
+                            target="_blank" 
+                            rel="noopener noreferrer"
+                            className="inline-flex items-center gap-2 px-4 py-2 bg-green-50 text-green-700 rounded-lg hover:bg-green-100 transition-colors font-medium text-sm mb-6"
+                          >
+                            View Spreadsheet <ExternalLink className="w-4 h-4" />
+                          </a>
+                        </div>
                       )}
 
                       {result.results && result.results.length > 0 && (
-                        <div className="border-t border-slate-100 pt-6">
+                        <div className="border-t border-slate-100 pt-6 px-4">
                           <h4 className="text-sm font-medium text-slate-500 uppercase tracking-wider mb-4">Files Processed</h4>
                           <ul className="space-y-4">
                             {result.results.map((file: any) => {
@@ -617,14 +754,16 @@ export default function App() {
                     </motion.div>
                   )}
                 </>
-              ) : (
+              )}
+
+              {activeTab === 'merged' && (
                 <div className="bg-white px-[1px] pt-[1px] pb-8 rounded-2xl shadow-sm border border-slate-200">
                   <div className="flex items-center justify-between mb-[1px] px-7 pt-[1px]">
                     <div>
-                      <h3 className="text-lg font-semibold text-slate-900">Merged Dictionary</h3>
+                      <h3 className="text-lg font-semibold text-slate-900 mt-4">Merged Dictionary</h3>
                       <p className="text-sm text-slate-500">Combined records from all sheets (duplicates removed)</p>
                     </div>
-                    <div className="flex items-center gap-2">
+                    <div className="flex items-center gap-2 mt-4">
                       <button
                         onClick={handleDownloadZip}
                         disabled={loadingMerged || mergedRecords.length === 0}
@@ -652,7 +791,7 @@ export default function App() {
                     </div>
                   ) : mergedRecords.length > 0 ? (
                     <>
-                      <div className="flex flex-wrap gap-4 px-7 mb-4 items-center">
+                      <div className="flex flex-wrap gap-4 px-7 mb-4 mt-4 items-center">
                         <label className="flex items-center gap-2 text-sm text-slate-700 cursor-pointer">
                           <input 
                             type="checkbox" 
@@ -737,7 +876,7 @@ export default function App() {
                       </div>
                     </>
                   ) : (
-                    <div className="py-20 flex flex-col items-center justify-center text-slate-400 bg-slate-50 rounded-xl border border-dashed border-slate-200">
+                    <div className="py-20 flex flex-col items-center justify-center text-slate-400 bg-slate-50 rounded-xl border border-dashed border-slate-200 mt-4 mx-4">
                       <Database className="w-12 h-12 mb-3 opacity-20" />
                       <p className="text-sm">No records found. Try fetching or check your linked spreadsheet.</p>
                     </div>
@@ -749,7 +888,6 @@ export default function App() {
         </AnimatePresence>
       </div>
       
-      {/* Debug Modal */}
       {debugInfo && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/50 backdrop-blur-sm">
           <div className="bg-white rounded-xl shadow-xl w-full max-w-2xl max-h-[80vh] flex flex-col overflow-hidden">
@@ -770,3 +908,17 @@ export default function App() {
     </div>
   );
 }
+
+export default function App() {
+  return (
+    <BrowserRouter>
+      <Routes>
+        <Route path="/" element={<AppContent />} />
+        <Route path="/merged" element={<AppContent />} />
+        <Route path="/docs" element={<FormatDocs />} />
+        <Route path="/about" element={<AboutApp />} />
+      </Routes>
+    </BrowserRouter>
+  );
+}
+

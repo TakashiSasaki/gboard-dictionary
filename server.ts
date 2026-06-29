@@ -297,7 +297,7 @@ async function startServer() {
       const csvEntry = zip.getEntries().find(e => e.entryName.toLowerCase().endsWith(".txt"));
       if (!csvEntry) return res.json({ error: "No text file" });
       const content = csvEntry.getData().toString("utf8");
-      const hex = Array.from(content.substring(0, 100)).map(c => c.charCodeAt(0).toString(16)).join(' ');
+      const hex = content.substring(0, 100).split('').map((c: string) => c.charCodeAt(0).toString(16).padStart(2, '0')).join(' ');
       res.json({ lines: content.split('\n').slice(0, 10), hex });
     } catch(e: any) {
       res.status(500).json({ error: e.message });

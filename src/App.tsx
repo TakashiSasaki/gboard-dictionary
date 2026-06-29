@@ -6,7 +6,7 @@
 import { useState, useEffect } from 'react';
 import { initAuth, googleSignIn, logout, getUserSpreadsheetId, setUserSpreadsheetId } from './firebase';
 import { User } from 'firebase/auth';
-import { Loader2, Database, ExternalLink, LogOut, Search, XCircle, FileSpreadsheet } from 'lucide-react';
+import { Loader2, Database, ExternalLink, LogOut, Search, XCircle, FileSpreadsheet, RefreshCcw } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 
 export default function App() {
@@ -15,27 +15,52 @@ export default function App() {
   const [spreadsheetId, setSpreadsheetId] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [importing, setImporting] = useState(false);
+  const [processingIds, setProcessingIds] = useState<Set<string>>(new Set());
   const [result, setResult] = useState<any>(null);
+  const [mergedRecords, setMergedRecords] = useState<string[][]>([]);
+  const [loadingMerged, setLoadingMerged] = useState(false);
+  const [activeTab, setActiveTab] = useState<'import' | 'merged'>('import');
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
-    const unsubscribe = initAuth(
-      async (u, t) => {
-        setUser(u);
-        setToken(t);
-        const sid = await getUserSpreadsheetId(u.uid);
-        setSpreadsheetId(sid);
-        setLoading(false);
-      },
-      () => {
-        setUser(null);
-        setToken(null);
-        setSpreadsheetId(null);
-        setLoading(false);
+    const unsubscribe = initAuth(async (u, t) => {
+      setUser(u);
+      setToken(t);
+      if (u) {
+        try {
+          const sid = await getUserSpreadsheetId(u.uid);
+          setSpreadsheetId(sid);
+        } catch (err: any) {
+          console.error("Firestore read error:", err);
+          if (err.code === 'permission-denied') {
+            setError("Permission denied accessing your settings. Please try signing in again.");
+          }
+        }
       }
-    );
+      setLoading(false);
+    });
     return () => unsubscribe();
   }, []);
+
+  const fetchMergedRecords = async () => {
+    if (!token || !spreadsheetId) return;
+    setLoadingMerged(true);
+    setError(null);
+    try {
+      const response = await fetch('/api/merged-records', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ accessToken: token, spreadsheetId }),
+      });
+      const data = await response.json();
+      if (data.error) throw new Error(data.error);
+      setMergedRecords(data.records || []);
+    } catch (err: any) {
+      setError("Failed to fetch merged records: " + err.message);
+    } finally {
+      setLoadingMerged(false);
+    }
+  };
 
   const handleLogin = async () => {
     try {
@@ -63,12 +88,19 @@ export default function App() {
     setError(null);
   };
 
-  const handleImport = async () => {
+  const handleImport = async (fileIds?: any) => {
     if (!token) return;
+
+    // If called as an event handler, fileIds will be the Event object.
+    // We only want to treat it as fileIds if it's an Array.
+    const actualFileIds = Array.isArray(fileIds) ? fileIds : undefined;
     
-    setImporting(true);
+    if (actualFileIds) {
+      setProcessingIds(prev => new Set([...prev, ...actualFileIds]));
+    } else {
+      setImporting(true);
+    }
     setError(null);
-    setResult(null);
 
     try {
       const response = await fetch('/api/import', {
@@ -78,7 +110,8 @@ export default function App() {
         },
         body: JSON.stringify({ 
           accessToken: token,
-          spreadsheetId: spreadsheetId
+          spreadsheetId: spreadsheetId,
+          fileIds: actualFileIds
         }),
       });
 
@@ -92,12 +125,34 @@ export default function App() {
         setSpreadsheetId(data.spreadsheetId);
       }
 
-      setResult(data);
+      // If it's a specific import, merge results into existing ones if available
+      if (actualFileIds && result?.results) {
+        const newResults = [...result.results];
+        data.results.forEach((res: any) => {
+          const idx = newResults.findIndex(r => r.fileId === res.fileId);
+          if (idx !== -1) {
+            newResults[idx] = res;
+          } else {
+            newResults.push(res);
+          }
+        });
+        setResult({ ...data, results: newResults });
+      } else {
+        setResult(data);
+      }
     } catch (err: any) {
       console.error(err);
       setError(err.message);
     } finally {
-      setImporting(false);
+      if (fileIds) {
+        setProcessingIds(prev => {
+          const next = new Set(prev);
+          fileIds.forEach(id => next.delete(id));
+          return next;
+        });
+      } else {
+        setImporting(false);
+      }
     }
   };
 
@@ -170,6 +225,19 @@ export default function App() {
                 </div>
 
                 <div className="flex flex-col gap-4">
+                  {!token && (
+                    <div className="bg-amber-50 border border-amber-100 p-4 rounded-xl text-amber-800 text-sm mb-2">
+                      <p className="font-medium mb-1">Workspace access expired</p>
+                      <p className="mb-3 opacity-90">Please sign in again to restore access to your Google Drive and Sheets.</p>
+                      <button 
+                        onClick={handleLogin}
+                        className="text-xs bg-amber-600 text-white px-3 py-1.5 rounded-md hover:bg-amber-700 transition-colors"
+                      >
+                        Re-authorize Workspace
+                      </button>
+                    </div>
+                  )}
+
                   {spreadsheetId && (
                     <div className="flex items-center justify-between p-4 bg-slate-50 rounded-xl border border-slate-100">
                       <div className="flex items-center gap-3">
@@ -196,8 +264,8 @@ export default function App() {
                   )}
 
                   <button
-                    onClick={handleImport}
-                    disabled={importing}
+                    onClick={() => handleImport()}
+                    disabled={importing || loading || !token || processingIds.size > 0}
                     className="w-full flex items-center justify-center gap-2 px-6 py-4 bg-slate-900 text-white font-medium rounded-xl hover:bg-slate-800 transition-colors disabled:opacity-50"
                   >
                     {importing ? (
@@ -212,49 +280,214 @@ export default function App() {
                       </>
                     )}
                   </button>
+                  {result && result.results && result.results.length > 0 && (
+                    <button
+                      onClick={() => handleImport()}
+                      disabled={importing}
+                      className="w-full flex items-center justify-center gap-2 px-6 py-3 bg-blue-50 text-blue-700 font-medium rounded-xl hover:bg-blue-100 transition-colors disabled:opacity-50 border border-blue-100"
+                    >
+                      {importing ? (
+                        <>
+                          <Loader2 className="w-4 h-4 animate-spin" />
+                          Importing All...
+                        </>
+                      ) : (
+                        <>
+                          <Database className="w-4 h-4" />
+                          Import All Files
+                        </>
+                      )}
+                    </button>
+                  )}
                 </div>
               </div>
 
-              {error && (
-                <div className="bg-red-50 border border-red-100 p-4 rounded-xl text-red-700 text-sm">
-                  {error}
-                </div>
-              )}
-
-              {result && (
-                <motion.div 
-                  initial={{ opacity: 0, scale: 0.95 }}
-                  animate={{ opacity: 1, scale: 1 }}
-                  className="bg-white p-8 rounded-2xl shadow-sm border border-slate-200"
+              {/* Tab Navigation */}
+              <div className="flex border-b border-slate-100">
+                <button
+                  onClick={() => setActiveTab('import')}
+                  className={`px-6 py-3 text-sm font-medium transition-colors border-b-2 ${
+                    activeTab === 'import' 
+                      ? 'border-slate-900 text-slate-900' 
+                      : 'border-transparent text-slate-400 hover:text-slate-600'
+                  }`}
                 >
-                  <h3 className="text-lg font-semibold mb-4">Import Summary</h3>
-                  <p className="text-slate-600 mb-6">{result.message}</p>
-                  
-                  {result.spreadsheetUrl && (
-                    <a 
-                      href={result.spreadsheetUrl} 
-                      target="_blank" 
-                      rel="noopener noreferrer"
-                      className="inline-flex items-center gap-2 px-4 py-2 bg-green-50 text-green-700 rounded-lg hover:bg-green-100 transition-colors font-medium text-sm mb-6"
-                    >
-                      View Spreadsheet <ExternalLink className="w-4 h-4" />
-                    </a>
-                  )}
+                  Import Results
+                </button>
+                <button
+                  onClick={() => {
+                    setActiveTab('merged');
+                    if (mergedRecords.length === 0) fetchMergedRecords();
+                  }}
+                  className={`px-6 py-3 text-sm font-medium transition-colors border-b-2 ${
+                    activeTab === 'merged' 
+                      ? 'border-slate-900 text-slate-900' 
+                      : 'border-transparent text-slate-400 hover:text-slate-600'
+                  }`}
+                >
+                  Merged View
+                </button>
+              </div>
 
-                  {result.results && result.results.length > 0 && (
-                    <div className="border-t border-slate-100 pt-6">
-                      <h4 className="text-sm font-medium text-slate-500 uppercase tracking-wider mb-4">Files Processed</h4>
-                      <ul className="space-y-3">
-                        {result.results.map((file: any) => (
-                          <li key={file.fileId} className="flex items-center justify-between text-sm bg-slate-50 p-3 rounded-lg border border-slate-100">
-                            <span className="font-mono text-slate-500">{file.fileId}</span>
-                            <span className="font-medium">{file.rows} records imported</span>
-                          </li>
-                        ))}
-                      </ul>
+              {activeTab === 'import' ? (
+                <>
+                  {error && (
+                    <div className="bg-red-50 border border-red-100 p-4 rounded-xl text-red-700 text-sm">
+                      {error}
                     </div>
                   )}
-                </motion.div>
+
+                  {result && (
+                    <motion.div 
+                      initial={{ opacity: 0, scale: 0.95 }}
+                      animate={{ opacity: 1, scale: 1 }}
+                      className="bg-white p-8 rounded-2xl shadow-sm border border-slate-200"
+                    >
+                      <h3 className="text-lg font-semibold mb-4">Import Summary</h3>
+                      <p className="text-slate-600 mb-6">{result.message}</p>
+                      
+                      {result.spreadsheetUrl && (
+                        <a 
+                          href={result.spreadsheetUrl} 
+                          target="_blank" 
+                          rel="noopener noreferrer"
+                          className="inline-flex items-center gap-2 px-4 py-2 bg-green-50 text-green-700 rounded-lg hover:bg-green-100 transition-colors font-medium text-sm mb-6"
+                        >
+                          View Spreadsheet <ExternalLink className="w-4 h-4" />
+                        </a>
+                      )}
+
+                      {result.results && result.results.length > 0 && (
+                        <div className="border-t border-slate-100 pt-6">
+                          <h4 className="text-sm font-medium text-slate-500 uppercase tracking-wider mb-4">Files Processed</h4>
+                          <ul className="space-y-4">
+                            {result.results.map((file: any) => {
+                              const isProcessing = processingIds.has(file.fileId);
+                              return (
+                                <li key={file.fileId} className="bg-slate-50 p-4 rounded-xl border border-slate-100 flex flex-col gap-3">
+                                  <div className="flex flex-col sm:flex-row sm:items-start justify-between gap-2">
+                                    <div className="min-w-0 flex-1">
+                                      <p className="font-medium text-slate-900 truncate" title={file.fileName}>
+                                        {file.fileName || 'Unknown File'}
+                                      </p>
+                                      <p className="text-[10px] font-mono text-slate-400 mt-1 truncate">
+                                        ID: {file.fileId}
+                                      </p>
+                                    </div>
+                                    <div className="flex items-center gap-2">
+                                      <span className={`text-[10px] px-2 py-1 rounded-full font-medium shrink-0 ${
+                                        file.status === 'imported' ? 'bg-green-100 text-green-700' : 
+                                        file.status === 'skipped' ? 'bg-blue-100 text-blue-700' : 
+                                        'bg-red-100 text-red-700'
+                                      }`}>
+                                        {file.status === 'imported' ? 'Imported' : file.status === 'skipped' ? 'Already Imported' : 'Error'}
+                                      </span>
+                                      <button
+                                        onClick={() => handleImport([file.fileId])}
+                                        disabled={isProcessing || importing}
+                                        className="p-1.5 text-blue-600 hover:bg-blue-100 rounded-lg transition-colors disabled:opacity-50"
+                                        title="Re-import this file"
+                                      >
+                                        {isProcessing ? (
+                                          <Loader2 className="w-4 h-4 animate-spin" />
+                                        ) : (
+                                          <Database className="w-4 h-4" />
+                                        )}
+                                      </button>
+                                    </div>
+                                  </div>
+                                  
+                                  <div className="grid grid-cols-2 gap-4 pt-2 border-t border-slate-200/50">
+                                    <div>
+                                      <p className="text-[10px] text-slate-400 uppercase tracking-wider font-semibold mb-0.5">Last Modified</p>
+                                      <p className="text-xs text-slate-600">
+                                        {file.modifiedTime ? new Date(file.modifiedTime).toLocaleDateString() : 'Unknown'}
+                                      </p>
+                                    </div>
+                                    <div>
+                                      <p className="text-[10px] text-slate-400 uppercase tracking-wider font-semibold mb-0.5">File Size</p>
+                                      <p className="text-xs text-slate-600">
+                                        {file.size ? (Number(file.size) / 1024).toFixed(1) + ' KB' : 'Unknown'}
+                                      </p>
+                                    </div>
+                                  </div>
+
+                                  {file.status === 'imported' && (
+                                    <p className="text-xs text-green-600 font-medium">
+                                      {file.rows} records added
+                                    </p>
+                                  )}
+                                  {file.status === 'error' && (
+                                    <p className="text-xs text-red-500 italic">
+                                      {file.message}
+                                    </p>
+                                  )}
+                                </li>
+                              );
+                            })}
+                          </ul>
+                        </div>
+                      )}
+                    </motion.div>
+                  )}
+                </>
+              ) : (
+                <div className="bg-white p-8 rounded-2xl shadow-sm border border-slate-200">
+                  <div className="flex items-center justify-between mb-6">
+                    <div>
+                      <h3 className="text-lg font-semibold text-slate-900">Merged Dictionary</h3>
+                      <p className="text-sm text-slate-500">Combined records from all sheets (duplicates removed)</p>
+                    </div>
+                    <button
+                      onClick={fetchMergedRecords}
+                      disabled={loadingMerged}
+                      className="p-2 text-slate-400 hover:text-slate-600 transition-colors"
+                      title="Refresh Merged View"
+                    >
+                      <RefreshCcw className={`w-5 h-5 ${loadingMerged ? 'animate-spin' : ''}`} />
+                    </button>
+                  </div>
+
+                  {loadingMerged ? (
+                    <div className="py-20 flex flex-col items-center justify-center text-slate-400 gap-3">
+                      <Loader2 className="w-8 h-8 animate-spin" />
+                      <p className="text-sm">Merging records from Sheets...</p>
+                    </div>
+                  ) : mergedRecords.length > 0 ? (
+                    <div className="border border-slate-100 rounded-xl overflow-hidden">
+                      <div className="overflow-x-auto">
+                        <table className="w-full text-sm text-left">
+                          <thead className="bg-slate-50 text-slate-500 font-medium border-b border-slate-100">
+                            <tr>
+                              <th className="px-4 py-3">Word</th>
+                              <th className="px-4 py-3">Reading</th>
+                              <th className="px-4 py-3">Language</th>
+                              <th className="px-4 py-3">Part of Speech</th>
+                            </tr>
+                          </thead>
+                          <tbody className="divide-y divide-slate-100">
+                            {mergedRecords.map((row, idx) => (
+                              <tr key={idx} className="hover:bg-slate-50/50 transition-colors">
+                                <td className="px-4 py-3 font-medium text-slate-900">{row[0]}</td>
+                                <td className="px-4 py-3 text-slate-600">{row[1]}</td>
+                                <td className="px-4 py-3 text-slate-500">{row[2]}</td>
+                                <td className="px-4 py-3 text-slate-400">{row[3]}</td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      </div>
+                      <div className="px-4 py-3 bg-slate-50 border-t border-slate-100 text-[10px] text-slate-400 uppercase tracking-wider font-semibold">
+                        Total unique records: {mergedRecords.length}
+                      </div>
+                    </div>
+                  ) : (
+                    <div className="py-20 flex flex-col items-center justify-center text-slate-400 bg-slate-50 rounded-xl border border-dashed border-slate-200">
+                      <Database className="w-12 h-12 mb-3 opacity-20" />
+                      <p className="text-sm">No records found. Try fetching or check your linked spreadsheet.</p>
+                    </div>
+                  )}
+                </div>
               )}
             </motion.div>
           )}

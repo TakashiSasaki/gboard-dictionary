@@ -1,20 +1,27 @@
 {
-  "collections": [
-    {
-      "collectionId": "users",
+  "entities": {
+    "User": {
+      "title": "User",
       "description": "Stores user preferences and linked spreadsheet ID",
-      "fields": [
-        {
-          "dataType": "string",
-          "description": "The Google Spreadsheet ID used for imports",
-          "fieldName": "spreadsheetId"
+      "type": "object",
+      "properties": {
+        "spreadsheetId": {
+          "type": "string",
+          "description": "The Google Spreadsheet ID used for imports"
         },
-        {
-          "dataType": "timestamp",
-          "description": "When the spreadsheet was linked",
-          "fieldName": "updatedAt"
+        "updatedAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "When the spreadsheet was linked"
         }
-      ]
+      },
+      "required": ["spreadsheetId", "updatedAt"]
     }
-  ]
+  },
+  "firestore": {
+    "/users/{userId}": {
+      "schema": "User",
+      "description": "User specific settings and spreadsheet links"
+    }
+  }
 }

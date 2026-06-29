@@ -382,10 +382,18 @@ function AppContent() {
           </div>
           
           <div className="flex items-center gap-4">
-            <Link to="/docs" className="text-slate-500 hover:text-slate-900 transition-colors flex items-center gap-1.5 text-sm font-medium">
-              <BookOpen className="w-4 h-4" />
-              <span className="hidden sm:inline">Technical Docs</span>
-            </Link>
+            {user && (
+              <>
+                <Link to="/about" className="text-slate-500 hover:text-slate-900 transition-colors flex items-center gap-1.5 text-sm font-medium">
+                  <Info className="w-4 h-4" />
+                  <span className="hidden sm:inline">About</span>
+                </Link>
+                <Link to="/docs" className="text-slate-500 hover:text-slate-900 transition-colors flex items-center gap-1.5 text-sm font-medium">
+                  <BookOpen className="w-4 h-4" />
+                  <span className="hidden sm:inline">Docs</span>
+                </Link>
+              </>
+            )}
 
             {user && (
               <div className="relative">

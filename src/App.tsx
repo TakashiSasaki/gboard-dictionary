@@ -531,9 +531,9 @@ function AppContent() {
                       <img src="/icon.svg" alt="App Icon" className="w-full h-full object-contain" />
                     </div>
                   </div>
-                  <h2 className="text-3xl sm:text-4xl font-bold mb-6 text-white tracking-tight">Sync Gboard to Google Sheets</h2>
+                  <h2 className="text-3xl sm:text-4xl font-bold mb-6 text-white tracking-tight">Merge Gboard Dictionaries</h2>
                   <p className="text-slate-300 mb-8 max-w-xl mx-auto leading-relaxed text-lg">
-                    Automatically extract, combine, and backup all your Android Gboard user dictionary words across multiple devices directly into a centralized Google Spreadsheet.
+                    Import your manually exported Gboard dictionaries from Google Drive, merge them into a centralized Google Spreadsheet, and download the consolidated dictionary.
                   </p>
                   
                   <div className="mb-8">
